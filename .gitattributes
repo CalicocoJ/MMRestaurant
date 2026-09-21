@@ -1,0 +1,20 @@
+# 行尾统一成 LF。
+# 【为什么需要】Windows 上 git 默认 core.autocrlf=true，会把文本文件在
+# 检入/检出时来回转换 CRLF/LF —— 于是每次 git add 都刷一屏
+# "LF will be replaced by CRLF" 警告，而且不同系统 clone 下来的行尾不一致，
+# git diff 也会出现「整文件都改了」的假象。对纯文本工程，LF 最省心。
+* text=auto eol=lf
+
+# 二进制文件不要碰（免得 git 去做换行转换）
+*.png binary
+*.jpg binary
+*.webp binary
+*.ttf binary
+*.otf binary
+*.pck binary
+*.exe binary
+
+# Godot 的场景 / 资源文件按文本处理，合并时好看一点
+*.tscn text eol=lf
+*.tres text eol=lf
+*.godot text eol=lf

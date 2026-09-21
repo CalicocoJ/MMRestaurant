@@ -1,0 +1,23 @@
+{
+  "_comment": "菜单。加后厨餐品进 kitchen_items，加饮品进 drink_items，代码不用改。",
+  "_fields": {
+    "id": "唯一标识，代码与订单里用它",
+    "name": "显示名（订单栏、后厨 UI、饮料机 UI、头顶气泡都用它）",
+    "price": "菜价（元）",
+    "color": "占位色（十六进制，不带 #）",
+    "main": "true = 主食。客人点单时「整桌至少点 min_main_per_group 份主食」只认这些菜（见 config.json 的同名键）",
+    "start_level": "从第几关开始出现（可选，默认 1）。这一关之前：饮料机里没有它的按钮，客人也不会点它"
+  },
+
+  "kitchen_items": [
+    { "id": "burger",  "name": "汉堡",   "price": 15, "color": "c0392b", "main": true },
+    { "id": "fries",   "name": "薯条",   "price": 6,  "color": "f2c230", "main": true },
+    { "id": "chicken", "name": "炸鸡块", "price": 12, "color": "b5651d", "main": true }
+  ],
+
+  "drink_items": [
+    { "id": "cola",  "name": "可乐", "price": 3, "color": "3f6fb5" },
+    { "id": "juice", "name": "橙汁", "price": 5, "color": "e8811f" },
+    { "id": "lemonade", "name": "柠檬水", "price": 2, "color": "f5e663", "start_level": 3 }
+  ]
+}

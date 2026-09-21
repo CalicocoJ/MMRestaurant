@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tools/check_kitchen_flow.gd" id="1_kflow"]
+
+[node name="CheckKitchenFlow" type="Node"]
+script = ExtResource("1_kflow")

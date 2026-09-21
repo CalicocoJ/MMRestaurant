@@ -1,0 +1,50 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="餐厅物语"
+config/description="按《餐厅玩法详细.txt》实现的餐厅时间管理游戏。仅鼠标左键操作；点击场景对象 → 服务员走过去 → 到达后执行动作。"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[autoload]
+
+Config="*res://scripts/core/game_config.gd"
+Game="*res://scripts/core/game_state.gd"
+Stickers="*res://scripts/ui/stickers.gd"
+UI="*res://scripts/ui/ui_manager.gd"
+DebugTrace="*res://scripts/core/debug_trace.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+
+[gui]
+
+theme/custom_font="res://assets/ui_font.tres"
+
+[layer_names]
+
+2d_physics/layer_1="world"
+2d_physics/layer_2="waiter"
+2d_physics/layer_3="customer"
+
+[physics]
+
+2d/default_gravity=0.0
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=0
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

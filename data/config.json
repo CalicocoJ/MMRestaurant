@@ -1,0 +1,46 @@
+{
+  "_comment": "《餐厅玩法详细.txt》第十九节的数值。键名与文档完全一致；带 _ 前缀的键是注释，代码会忽略。",
+  "_deviation": "clean_time 文档写的是 3.0，已按玩家要求缩短为 2.0（2026 改动）。",
+
+  "table_count": 3,
+  "patience_waiting_to_order": 28.0,
+  "patience_waiting_for_food": 45.0,
+
+  "_patience_eating": "客人开始用餐后要多久才吃完。文档写 12.0，已按玩家要求缩短为 10.0。注意它是**桌子被占住**的时间：客人在吃的这段里既不能接新单、也不能擦桌，所以这个值直接决定赚钱上限。",
+  "patience_eating": 10.0,
+
+  "kitchen_cook_time": 3.0,
+
+  "_counter_capacity": "出餐口最多同时放几份。已与玩家确认改为 2：后厨不再等玩家取走才做下一道，做好的菜在出餐口排 2 份，取走一份、空位当帧就被补上。",
+  "counter_capacity": 2,
+  "customer_spawn_check_interval": 1.0,
+  "empty_table_delay": 2.0,
+  "waiter_speed": 290.0,
+  "clean_time": 2.0,
+  "max_items_per_customer": 2,
+
+  "_hand_capacity": "玩家手上能同时拿几份餐（已与用户确认改为 2）。",
+  "hand_capacity": 2,
+
+  "_extra": "以下是文档没写、但实现必须要有的补充项。",
+  "_item_count_weights": "客人点几样菜：1 样 50% / 2 样 50%（已与用户确认）。每人各点 1~2 样。",
+  "item_count_weights": { "1": 0.5, "2": 0.5 },
+
+  "_group_size_weights": "一组来几位客人：1 人 70% / 2 人 30%（已与用户确认）。整组必须坐同一张桌，坐不下就在门口等。",
+  "group_size_weights": { "1": 0.7, "2": 0.3 },
+
+  "_min_main_per_group": "每「桌」至少要点几份主食（已与用户确认：客人不能只点饮料）。按**整桌合计**算，不是按人 —— 一组两人时允许「一人汉堡、另一人只喝可乐」。哪些算主食由 menu.json 里的 main 标记决定。设 0 = 关闭这条规则。",
+  "min_main_per_group": 1,
+
+  "_group_order_reroll_max": "整桌主食不够时重摇整组订单的次数上限。按 1~2 样随机、全菜单 5 道里 3 道是主食，摇不到主食的概率约 4%，重摇几乎总是一次就过；这个上限只是防死循环的保底。",
+  "group_order_reroll_max": 20,
+
+  "_group_entry_stagger": "同组客人在门口生成时沿 x 轴错开的像素数（已与用户确认：同组同时生成，但不要重叠）。0 = 都从门口中心出发（身体会重叠）。",
+  "group_entry_stagger": 36.0,
+
+  "_customer_speed": "文档只写了服务员速度，客人走路速度是补充项。",
+  "customer_speed": 220.0,
+
+  "_stuck_timeout": "服务员被家具卡住多久后放弃该指令（保底防死锁）。",
+  "stuck_timeout": 2.0
+}
