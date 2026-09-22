@@ -169,12 +169,15 @@ func handle_click(world_point: Vector2) -> void:
 		walk_to_only(world_point)      # 点空地：只是走过去
 		return
 
-	# 3) 后厨 / 出餐口是同一个大矩形里的两块，按点在哪一块分派
+	# 3) 柜台是「一块牌子里的两个小方块」：出餐口取餐、点餐铃弹点餐窗；
+	#    其余部分没反应（2026 玩家确认：只有点餐铃才弹窗，避免误触）
 	if obj.kind == Constants.Kind.COUNTER:
 		if obj.is_pickup_point(world_point):
 			obj.take_from_counter(self)
-		else:
+		elif obj.is_bell_point(world_point):
 			obj.open_kitchen(self)
+		else:
+			say(Constants.MSG_COUNTER_HINT)
 		return
 
 	obj.interact(self)

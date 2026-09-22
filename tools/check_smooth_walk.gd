@@ -26,12 +26,15 @@ const MAX_STALL_FRAMES := 30
 
 var _ok := 0
 var _bad := 0
+## 本体检加载的游戏场景（`_find_node` 从这里往下找家具）
+var _level: Node = null
 
 
 func _ready() -> void:
 	await get_tree().process_frame
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	get_tree().root.add_child(level)
+	_level = level
 	level.get_node("CustomerSpawner").set_process(false)
 	await get_tree().physics_frame
 
@@ -123,23 +126,22 @@ func _test_real_collision(waiter: Node, router: Node) -> void:
 	waiter.call("cancel_command", "体检复位")
 	await get_tree().physics_frame
 	waiter.call("cancel_command", "体检复位")
-	# 【为什么要人为把落脚点设进家具】正常路径已经不擦家具了
-	# （净空修好后实测最近也有 42px），点空地/点桌子都不会碰撞。
-	# 但玩家**硬点家具里侧**时（视觉上分不清桌沿），落脚点就在碰撞盒深处，
-	# 身体会一路顶上去 —— 这条最坏路径必须仍然是「沿面滑 + 到点放弃」，
-	# 不能变成高频抖动或永久僵死。所以这里直接把落脚点指到桌面中心，
-	# 用真实的碰撞法线跑一遍 A/C。
-	var table: Node = Game.table_by_id(1)
-	var centre: Vector2 = table.call("collision_rect_global").get_center()
-	var start := Vector2(180, 700)          # 远处起点：会沿桌1 左侧压上去一段
+	# 【为什么这样造碰撞】净空修复之后，正常路线的拐点离家具至少 42px，
+	# 点空地/点桌子都不会碰到家具 —— 原来「把落脚点指进家具」的夹具
+	# 也被净空逻辑推开了。真正还会碰撞的场景是**玩家去点家具本身**：
+	# 服务员朝它走，被它的碰撞盒挡住，只能贴着面滑/绕。
+	# 这里就复现这个：从垃圾桶左边走向垃圾桶（用真实点击链路）。
+	var trash: Node = _find_node("Trash")
+	var t_box: Rect2 = trash.call("collision_rect_global")
+	var start := Vector2(t_box.position.x - 90.0, t_box.get_center().y)
 	waiter.global_position = start
 	waiter.set("_last_pos", start)
-	waiter.call("command_move", centre, Callable(), "探针：压进桌子")
-	var pf: Node = get_tree().get_first_node_in_group("pathfinder")
-	var snapped: Array = pf.call("find_path", start, centre)
-	var endp: Vector2 = snapped[snapped.size() - 1] if not snapped.is_empty() else start
-	print("    夹具：起点 %s → 目标 %s（桌心），A* 终点 %s" % [
-		str(start), str(centre.round()), str(endp.round())])
+	router.call("handle_click", t_box.get_center())
+	var goal: Vector2 = waiter.get("_goal_pt")
+	print("    夹具：起点 %s → 点垃圾桶中心 %s（落脚点 %s，垃圾桶碰撞盒 %s）" % [
+		str(start.round()), str(t_box.get_center().round()), str(goal.round()),
+		"(%.0f,%.0f %.0fx%.0f)" % [t_box.position.x, t_box.position.y,
+			t_box.size.x, t_box.size.y]])
 
 	var longest := 0
 	var streak := 0
@@ -173,9 +175,9 @@ func _test_real_collision(waiter: Node, router: Node) -> void:
 		if not bool(waiter.call("is_busy")):
 			break
 	# 夹具自检：得真的压上去才算覆盖到
-	print("    夹具：结束位置 %s，离桌心 %.1fpx，滑行帧 %d" % [
+	print("    夹具：结束位置 %s，离目标 %.1fpx，滑行帧 %d" % [
 		str(waiter.global_position.round()),
-		waiter.global_position.distance_to(centre), slide_frames])
+		waiter.global_position.distance_to(goal), slide_frames])
 
 	_ok += 1
 	if slide_frames > 0 or collision > 0:
@@ -320,6 +322,25 @@ func _test_budget_recovers(waiter: Node, router: Node) -> void:
 		_bad += 1
 		print("  [FAIL] 走了 %d 帧预算仍是 %d（回收没生效）" % [frames, after])
 	waiter.call("cancel_command", "体检复位")
+
+
+## 在整棵场景树里按节点名找一件家具（饮料机 / 垃圾桶…）
+## 【从 level 起找，不要从 current_scene 起】测试里 main.tscn 是手动 add_child
+## 进来的，`get_tree().current_scene` 可能是 null 或另一个节点 ——
+## 从它起找会返回 null，然后 `call()` 直接报错、后面的断言全被跳过
+## （实测过：只打印了 `[2b]` 标题就没了）。
+func _find_node(node_name: String, root: Node = null) -> Node:
+	if root == null:
+		root = _level
+	if root == null:
+		return null
+	if String(root.name) == node_name:
+		return root
+	for c in root.get_children():
+		var r := _find_node(node_name, c)
+		if r != null:
+			return r
+	return null
 
 
 func _eq(got: Variant, want: Variant, label: String) -> void:

@@ -37,6 +37,19 @@ var _blocked: PackedByteArray = PackedByteArray()
 var _blocked2: PackedByteArray = PackedByteArray()
 ## 客人网格的外扩量
 const CUSTOMER_INFLATE := 8.0
+
+## 客人网格**额外向下**外扩多少（px）。
+##
+## 【为什么需要这个】家具的**可视矩形比碰撞盒高**：柜台/饮料机/垃圾桶的碰撞盒
+## 只占上方 72~75%，桌子只占下方 75%，标签/露出来的那一截在碰撞盒之外。
+## 于是「路径离碰撞盒 33px」在画面上看起来就是**客人走在柜台里面**
+## （玩家截图指出：「客人的动线不能和后厨区域重叠」）。
+## 客人的网格是按碰撞盒建的、只外扩 8px，挡不住这种视觉重叠 ——
+## 所以给客人的障碍额外往**下**长 24px，让路径整体离开家具的可视下沿。
+## 【为什么只改客人】服务员本来就要贴着家具站（他的落脚点就是按碰撞盒算的），
+## 加这个会把「贴着柜台取餐」变成不可达。
+const CUSTOMER_INFLATE_DOWN := 40.0
+
 var _cols: int = 0
 var _rows: int = 0
 
@@ -65,7 +78,15 @@ func build(obstacles: Array, inflate: float = 6.0) -> void:
 	# 客人半径 15px，本来就该坐在椅子上（和椅子重叠是正常的），
 	# 用 8px 外扩：椅子那格可达，**桌子那几格仍然封着**，
 	# 而「不能从桌子上走过去」（玩家报的 bug）正是靠挡住桌子实现的。
-	_blocked2 = _make_grid(obstacles, CUSTOMER_INFLATE)
+	#
+	# 【额外往下的那一层】见 CUSTOMER_INFLATE_DOWN 的说明：只靠 8px 外扩，
+	# 路径会贴着家具的**可视下沿**走，看起来像走进了柜台里。
+	var cust_boxes: Array = []
+	for ob in obstacles:
+		var r: Rect2 = ob
+		r.size.y += CUSTOMER_INFLATE_DOWN
+		cust_boxes.append(r)
+	_blocked2 = _make_grid(cust_boxes, CUSTOMER_INFLATE)
 
 
 ## 按指定外扩量生成障碍网格

@@ -197,11 +197,15 @@ func _draw() -> void:
 ## 居中会和家具自己画的图案撞上 —— 饮料机的杯子和出水口就在中间，
 ## 标签压上去以后两者叠在一起（放大截图确认过）。
 ## 改成贴底（留 4px），中间那块完整留给图案，以后加图标也不会再打架。
-func _draw_label(text: String, r: Rect2, color: Color = Color.TRANSPARENT) -> void:
+##
+## 【font_size 可传】默认 14。点餐铃那种 64×48 的小方块塞不下 14px，
+## 需要 11px；加这个参数比在外面重写一遍绘制逻辑干净。
+func _draw_label(text: String, r: Rect2, color: Color = Color.TRANSPARENT,
+		font_size: int = 14) -> void:
 	var f := _get_font()
 	if f == null:
 		return
-	var fs := 14
+	var fs := font_size
 	var size := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 	var c := label_color if color == Color.TRANSPARENT else color
 	var at := Vector2(

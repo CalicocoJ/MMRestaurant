@@ -174,7 +174,8 @@ func _build_world() -> void:
 		EntityBase.from_array(kw.get("rect", []), Rect2(420, 20, 240, 60)),
 		EntityBase.from_array(kw.get("pickup_rect", []), Rect2(498, 50, 84, 30)),
 		EntityBase.point_from_array(kw.get("walk", []), Vector2(540, 150)),
-		EntityBase.point_from_array(kw.get("pickup_walk", []), Vector2(540, 140)))
+		EntityBase.point_from_array(kw.get("pickup_walk", []), Vector2(540, 140)),
+		EntityBase.from_array(kw.get("bell_rect", []), Rect2(0, 0, 0, 0)))
 
 	# 饮料机
 	var dm: Dictionary = lay.get("drink_machine", {})

@@ -246,13 +246,27 @@ func _test_popup_waits_for_arrival(level: Node, router: Node, waiter: Node,
 	var drink: Node = level.get_node("World/DrinkMachine")
 	var table: Node = Game.table_by_id(2)
 
+	# 【坐标必须从节点现算，不能写死】2026 改场景布局时，饮料机从 x=845 挪到 x=670，
+	# 写死的 (900,140) 就落到了它右边 130px 的空地上 → 点击变「点空地」→
+	# 弹窗永远不开，测试报「第 -1 帧才开」。同理，判定用的视觉矩形也要按实际位置算。
+	var dc: Rect2 = drink.call("collision_rect_global")
+	var d_visual := Rect2(drink.global_position, drink.get("rect_size"))
 	for spec in [
-		{"name": "饮料机", "point": Vector2(900, 140),
-			"visual": Rect2(Vector2(845, 96), Vector2(110, 100))},
+		{"name": "饮料机", "point": d_visual.get_center(),
+			"visual": d_visual},
 		{"name": "点餐台", "point": counter.to_global(counter.pickup_rect.get_center())
 			- Vector2(0, 30),
-			"visual": Rect2(Vector2(420, 96), Vector2(240, 100))},
+			"visual": Rect2(counter.global_position, counter.get("rect_size"))},
 	]:
+		# 防御：这一点必须真的落在目标物件上（否则又变成「点空地」）
+		var hit: Variant = router.call("_object_at", spec["point"])
+		if hit == null:
+			push_error("%s 的测试点击点 %s 不在任何物件上（坐标写错？）" % [
+				spec["name"], str(spec["point"])])
+		print("     [夹具] %s 点击点 %s 命中 %s" % [
+			spec["name"], str(spec["point"]),
+			(String(hit.name) if hit != null else "无")])
+
 		UI.close_popups()
 		waiter.call("cancel_command", "体检复位")
 		await get_tree().physics_frame

@@ -99,6 +99,14 @@ func _setup_pose(level: Node, pose: String) -> void:
 		waiter.call("set_carried_list", Game.hand_items())
 	elif pose == "kitchen":
 		UI.open_kitchen()
+	elif pose == "kitchen2":
+		# 后厨点单弹窗 + 队列里放几份（用来看「队列小方块 + 菜名/价格」的样子）
+		UI.open_kitchen()
+		await get_tree().physics_frame
+		var kp: Control = UI.kitchen_popup()
+		for id in ["burger", "fries", "burger", "chicken", "fries", "burger", "cola"]:
+			kp.call("_add_one", id)
+		await get_tree().physics_frame
 	elif pose == "drink":
 		UI.open_drink_machine()
 	elif pose == "pass" or pose == "fail":
