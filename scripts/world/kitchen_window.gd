@@ -1,3 +1,4 @@
+@tool
 extends EntityBase
 ## 后厨 / 点餐台（柜台）。
 ##

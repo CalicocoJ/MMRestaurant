@@ -1,3 +1,4 @@
+@tool
 extends EntityBase
 ## 饮料机（文档第五节第 4 步、第七节的取饮品）。
 ##

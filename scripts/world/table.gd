@@ -1,3 +1,4 @@
+@tool
 extends EntityBase
 ## 桌子（含它自己的座位）。
 ##

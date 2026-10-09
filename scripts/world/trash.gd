@@ -1,3 +1,4 @@
+@tool
 extends EntityBase
 ## 垃圾桶（文档第十一节）。
 ##

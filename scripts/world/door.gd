@@ -1,3 +1,4 @@
+@tool
 extends EntityBase
 class_name Door
 ## 门口。
