@@ -54,6 +54,7 @@ func _ready() -> void:
 
 	# 3) 场景装进视口
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	vp.add_child(level)
 
 	# 4) 手动推进游戏时间，让画面有内容（客人、订单栏、飘字）

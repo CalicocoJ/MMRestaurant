@@ -33,6 +33,7 @@ var _router: Node = null
 func _ready() -> void:
 	await get_tree().process_frame
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	level.get_node("CustomerSpawner").set_process(false)
 	await get_tree().physics_frame

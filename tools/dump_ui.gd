@@ -30,6 +30,7 @@ func _ready() -> void:
 			vp.add_child(layer)
 
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	vp.add_child(level)
 
 	# 推进几帧，让容器完成布局

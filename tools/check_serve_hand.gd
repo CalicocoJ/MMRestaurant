@@ -38,6 +38,7 @@ func _ready() -> void:
 	print("════════ 上菜扣手体检 ════════")
 
 	_level = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	_level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(_level)
 	await get_tree().physics_frame
 	await get_tree().physics_frame

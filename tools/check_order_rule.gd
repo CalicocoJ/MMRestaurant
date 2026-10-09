@@ -205,6 +205,7 @@ func _test_group_spawn() -> void:
 	print("[6] 同组客人同一帧生成 + 订单落到客人身上")
 	var packed := load("res://scenes/main.tscn") as PackedScene
 	var level: Node = packed.instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	await get_tree().physics_frame
 
@@ -305,6 +306,7 @@ func _test_spawn_keeps_going() -> void:
 	print("[8] 自动生成不会「来一组就停」")
 	var packed := load("res://scenes/main.tscn") as PackedScene
 	var level: Node = packed.instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	await get_tree().physics_frame
 

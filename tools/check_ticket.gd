@@ -82,6 +82,7 @@ func _pixel_check() -> void:
 			get_tree().root.remove_child(layer)
 			vp.add_child(layer)
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	vp.add_child(level)
 	level.get_node("CustomerSpawner").set_process(false)
 	for i in 8:

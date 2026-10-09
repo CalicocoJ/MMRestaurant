@@ -176,6 +176,7 @@ func _test_instant_refill() -> void:
 func _test_real_pickup() -> void:
 	print("[3] 真实点击取餐：一次拿走 2 份（受手上容量限制）")
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	await get_tree().physics_frame
 	await get_tree().physics_frame

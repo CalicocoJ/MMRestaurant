@@ -22,6 +22,7 @@ var _bad := 0
 func _ready() -> void:
 	await get_tree().process_frame
 	_level = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	_level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(_level)
 	_router = _level.get_node("ClickRouter")
 	_waiter = _level.get_node("Actors/Waiter")

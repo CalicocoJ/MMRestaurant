@@ -37,6 +37,7 @@ func _check(cond: bool, what: String) -> void:
 
 func _new_level() -> Node:
 	var lv: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	lv.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(lv)
 	lv.get_node("CustomerSpawner").set_process(false)
 	return lv

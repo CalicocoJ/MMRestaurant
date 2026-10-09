@@ -268,6 +268,7 @@ func _test_customer_lifecycle() -> void:
 		ok(false, "能加载 main.tscn")
 		return
 	var level: Node = packed.instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 
 	var spawner: Node = level.get_node_or_null("CustomerSpawner")
@@ -380,6 +381,7 @@ func _test_waiter_movement() -> void:
 	print("[7] 服务员移动（真实物理帧）")
 	var packed := load("res://scenes/main.tscn") as PackedScene
 	var level: Node = packed.instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	level.get_node("CustomerSpawner").set_process(false)
 	await get_tree().physics_frame
@@ -471,6 +473,7 @@ func _drive_until_arrived(waiter: Node, target: Vector2, timeout: float) -> bool
 func _test_click_flow() -> void:
 	print("[8] 完整点击链路（模拟左键）")
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	level.get_node("CustomerSpawner").set_process(false)
 	await get_tree().physics_frame
@@ -596,6 +599,7 @@ func _click_and_settle(router: Node, waiter: Node, pos: Vector2) -> void:
 func _test_counter_visual_sync() -> void:
 	print("[9] 出餐口视觉同步（重绘请求）")
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	level.get_node("CustomerSpawner").set_process(false)
 	await get_tree().physics_frame
@@ -670,6 +674,7 @@ class _CounterProbe extends Node:
 func _test_touch_arrival() -> void:
 	print("[10] 碰到就触发（四个方向）")
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	level.get_node("CustomerSpawner").set_process(false)
 	await get_tree().physics_frame
@@ -770,6 +775,7 @@ func _test_touch_arrival() -> void:
 func _test_seats_and_groups() -> void:
 	print("[11] 座位与一组客人")
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	var spawner: Node = level.get_node("CustomerSpawner")
 	spawner.set_process(false)
@@ -861,6 +867,7 @@ func _test_seats_and_groups() -> void:
 func _scan_seat_reachability() -> void:
 	print("[scan] 从网格各点出发，能否到达每个座位")
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	level.get_node("CustomerSpawner").set_process(false)
 	await get_tree().physics_frame
@@ -933,6 +940,7 @@ func _scan_seat_reachability() -> void:
 func _test_shared_order_delivery() -> void:
 	print("[12] 共享订单与自动分配")
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	var spawner: Node = level.get_node("CustomerSpawner")
 	spawner.set_process(false)
@@ -1011,6 +1019,7 @@ func _test_walk_targets() -> void:
 		ok(false, "能加载 main.tscn")
 		return
 	var level: Node = packed.instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	level.get_node("CustomerSpawner").set_process(false)
 
@@ -1078,6 +1087,7 @@ func _test_walk_target_clearance() -> void:
 	print("[14] walk_to 与碰撞盒的间隙")
 	var packed := load("res://scenes/main.tscn") as PackedScene
 	var level: Node = packed.instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	level.get_node("CustomerSpawner").set_process(false)
 

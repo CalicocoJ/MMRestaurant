@@ -16,6 +16,7 @@ const STEP := 1.0 / 60.0
 func _ready() -> void:
 	await get_tree().process_frame
 	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	level.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	get_tree().root.add_child(level)
 	var spawner: Node = level.get_node("CustomerSpawner")
 	spawner.set_process(false)

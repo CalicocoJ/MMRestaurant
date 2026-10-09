@@ -196,6 +196,7 @@ func _ready() -> void:
 
 func _new_level(with_start_screen: bool) -> Node:
 	var lv: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	lv.set("force_generated_layout", true)   # 测试模式：按 layout.json 生成，忽略设计场景里的家具
 	# main.tscn 里的声明就是 true；测试要三态覆盖，所以这里显式设一遍。
 	lv.set("show_start_screen", with_start_screen)
 	return lv
