@@ -1,6 +1,166 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=4 uid="uid://chu8k66m31143"]
 
-[ext_resource type="Script" path="res://scripts/level/level.gd" id="1_level"]
+[ext_resource type="Script" uid="uid://jfjase265k6" path="res://scripts/level/level.gd" id="1_level"]
+[ext_resource type="TileSet" uid="uid://dteusuv22e8r5" path="res://assets/tiles/floor_tileset.tres" id="2_0wfyh"]
+[ext_resource type="Script" uid="uid://c4scvhi0y2bjx" path="res://scripts/world/table.gd" id="3_jyhfs"]
+[ext_resource type="Texture2D" uid="uid://e3pl8pb4x2hf" path="res://assets/50sdiner_set_withshadow.png" id="4_tbgi4"]
+[ext_resource type="Script" uid="uid://1yopnxe11q26" path="res://scripts/world/door.gd" id="5_o6xl0"]
+[ext_resource type="Script" uid="uid://dryw0dcrhjnuc" path="res://scripts/world/chair.gd" id="5_tipki"]
+[ext_resource type="Texture2D" uid="uid://daf737080nns0" path="res://assets/50sdiner_room_door_tiles3.png" id="6_tipki"]
 
-[node name="Level" type="Node2D"]
+[sub_resource type="AtlasTexture" id="AtlasTexture_n1nnj"]
+atlas = ExtResource("4_tbgi4")
+region = Rect2(182, 146, 21, 46)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_kquq6"]
+atlas = ExtResource("4_tbgi4")
+region = Rect2(7, 201, 24, 53)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_chair"]
+size = Vector2(21, 43)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_5xiju"]
+atlas = ExtResource("4_tbgi4")
+region = Rect2(7, 201, 24, 54)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_n1nnj"]
+size = Vector2(22, 42)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_table"]
+size = Vector2(20.5, 35)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_hc7ip"]
+atlas = ExtResource("6_tipki")
+region = Rect2(273, 293, 62, 67)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_d5vy5"]
+atlas = ExtResource("4_tbgi4")
+region = Rect2(245, 260, 86, 120)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hc7ip"]
+size = Vector2(92, 131)
+
+[node name="Level" type="Node2D" unique_id=891248357]
 script = ExtResource("1_level")
+
+[node name="Floor" type="TileMapLayer" parent="." unique_id=2040977122]
+z_index = -100
+tile_map_data = PackedByteArray("AAABAAEAAgAYAAQAAAADAAEAAgAYAAQAAAAFAAEAAgAYAAQAAAAHAAEAAgAYAAQAAAAJAAEAAgAYAAQAAAALAAEAAgAYAAQAAAANAAEAAgAYAAQAAAAPAAEAAgAYAAQAAAARAAEAAgAYAAQAAAATAAEAAgAYAAQAAAAVAAEAAgAYAAQAAAAFAAQAAgAYAAAAAAANAAQAAgAYAAAAAAAPAAQAAgAYAAAAAAAQAAQAAgAYAAAAAAARAAQAAgAYAAAAAAASAAQAAgAYAAAAAAATAAQAAgAYAAAAAAAUAAQAAgAYAAAAAAAVAAQAAgAYAAAAAAABAAYAAgAYAAAAAAACAAYAAgAYAAAAAAADAAYAAgAYAAAAAAAEAAYAAgAYAAAAAAAFAAYAAgAYAAAAAAAGAAYAAgAYAAAAAAAHAAYAAgAYAAAAAAAIAAYAAgAYAAAAAAAJAAYAAgAYAAAAAAAKAAYAAgAYAAAAAAALAAYAAgAYAAAAAAAMAAYAAgAYAAAAAAANAAYAAgAYAAAAAAAOAAYAAgAYAAAAAAAPAAYAAgAYAAAAAAAQAAYAAgAYAAAAAAARAAYAAgAYAAAAAAASAAYAAgAYAAAAAAATAAYAAgAYAAAAAAAUAAYAAgAYAAAAAAAVAAYAAgAYAAAAAAABAAgAAgAYAAAAAAACAAgAAgAYAAAAAAADAAgAAgAYAAAAAAAEAAgAAgAYAAAAAAAFAAgAAgAYAAAAAAAGAAgAAgAYAAAAAAAHAAgAAgAYAAAAAAAIAAgAAgAYAAAAAAAJAAgAAgAYAAAAAAAKAAgAAgAYAAAAAAALAAgAAgAYAAAAAAAMAAgAAgAYAAAAAAANAAgAAgAYAAAAAAAOAAgAAgAYAAAAAAAPAAgAAgAYAAAAAAAQAAgAAgAYAAAAAAARAAgAAgAYAAAAAAASAAgAAgAYAAAAAAATAAgAAgAYAAAAAAAUAAgAAgAYAAAAAAAVAAgAAgAYAAAAAAABAAoAAgAYAAAAAAACAAoAAgAYAAAAAAADAAoAAgAYAAAAAAAEAAoAAgAYAAAAAAAFAAoAAgAYAAAAAAAGAAoAAgAYAAAAAAAHAAoAAgAYAAAAAAAIAAoAAgAYAAAAAAAJAAoAAgAYAAAAAAAKAAoAAgAYAAAAAAALAAoAAgAYAAAAAAAMAAoAAgAYAAAAAAANAAoAAgAYAAAAAAAOAAoAAgAYAAAAAAAPAAoAAgAYAAAAAAAQAAoAAgAYAAAAAAARAAoAAgAYAAAAAAASAAoAAgAYAAAAAAATAAoAAgAYAAAAAAAUAAoAAgAYAAAAAAAVAAoAAgAYAAAAAAABAAwAAgAYAAAAAAACAAwAAgAYAAAAAAADAAwAAgAYAAAAAAAEAAwAAgAYAAAAAAAFAAwAAgAYAAAAAAAGAAwAAgAYAAAAAAAHAAwAAgAYAAAAAAAIAAwAAgAYAAAAAAAJAAwAAgAYAAAAAAAKAAwAAgAYAAAAAAALAAwAAgAYAAAAAAAMAAwAAgAYAAAAAAANAAwAAgAYAAAAAAAOAAwAAgAYAAAAAAAPAAwAAgAYAAAAAAAQAAwAAgAYAAAAAAARAAwAAgAYAAAAAAASAAwAAgAYAAAAAAATAAwAAgAYAAAAAAAUAAwAAgAYAAAAAAAVAAwAAgAYAAAAAAABAA4AAgAYAAAAAAACAA4AAgAYAAAAAAADAA4AAgAYAAAAAAAEAA4AAgAYAAAAAAAFAA4AAgAYAAAAAAAGAA4AAgAYAAAAAAAHAA4AAgAYAAAAAAAIAA4AAgAYAAAAAAAJAA4AAgAYAAAAAAAKAA4AAgAYAAAAAAALAA4AAgAYAAAAAAAMAA4AAgAYAAAAAAANAA4AAgAYAAAAAAAOAA4AAgAYAAAAAAAPAA4AAgAYAAAAAAAQAA4AAgAYAAAAAAARAA4AAgAYAAAAAAASAA4AAgAYAAAAAAAOAAQAAgAYAAAAAAAMAAQAAgAYAAAAAAALAAQAAgAYAAAAAAAKAAQAAgAYAAAAAAAJAAQAAgAYAAAAAAAIAAQAAgAYAAAAAAAHAAQAAgAYAAAAAAAGAAQAAgAYAAAAAAAEAAQAAgAYAAAAAAADAAQAAgAYAAAAAAABAAQAAgAYAAAAAAACAAQAAgAYAAAAAAAUAA4AAgAYAAAAAAAVAA4AAgAYAAAAAAAXAAEAAgAYAAQAAAAZAAEAAgAYAAQAAAAbAAEAAgAYAAQAAAAXAAQAAgAYAAAAAAAYAAQAAgAYAAAAAAAZAAQAAgAYAAAAAAAaAAQAAgAYAAAAAAAbAAQAAgAYAAAAAAAXAAYAAgAYAAAAAAAYAAYAAgAYAAAAAAAZAAYAAgAYAAAAAAAaAAYAAgAYAAAAAAAbAAYAAgAYAAAAAAAXAAgAAgAYAAAAAAAYAAgAAgAYAAAAAAAZAAgAAgAYAAAAAAAaAAgAAgAYAAAAAAAbAAgAAgAYAAAAAAAXAAoAAgAYAAAAAAAYAAoAAgAYAAAAAAAZAAoAAgAYAAAAAAAaAAoAAgAYAAAAAAAbAAoAAgAYAAAAAAAXAAwAAgAYAAAAAAAYAAwAAgAYAAAAAAAZAAwAAgAYAAAAAAAaAAwAAgAYAAAAAAAbAAwAAgAYAAAAAAAXAA4AAgAYAAAAAAAYAA4AAgAYAAAAAAAZAA4AAgAYAAAAAAAaAA4AAgAYAAAAAAAbAA4AAgAYAAAAAAABABAAAgAYAAAAAAADABAAAgAYAAAAAAAFABAAAgAYAAAAAAAGABAAAgAYAAAAAAAHABAAAgAYAAAAAAAIABAAAgAYAAAAAAAJABAAAgAYAAAAAAAKABAAAgAYAAAAAAALABAAAgAYAAAAAAAMABAAAgAYAAAAAAANABAAAgAYAAAAAAAPABAAAgAYAAAAAAAQABAAAgAYAAAAAAARABAAAgAYAAAAAAASABAAAgAYAAAAAAATABAAAgAYAAAAAAAUABAAAgAYAAAAAAAVABAAAgAYAAAAAAAWABAAAgAYAAAAAAAXABAAAgAYAAAAAAAYABAAAgAYAAAAAAAZABAAAgAYAAAAAAAaABAAAgAYAAAAAAAbABAAAgAYAAAAAAABABIAAgAYAAAAAAACABIAAgAYAAAAAAADABIAAgAYAAAAAAAEABIAAgAYAAAAAAAFABIAAgAYAAAAAAAGABIAAgAYAAAAAAAHABIAAgAYAAAAAAAIABIAAgAYAAAAAAAJABIAAgAYAAAAAAAKABIAAgAYAAAAAAALABIAAgAYAAAAAAAMABIAAgAYAAAAAAANABIAAgAYAAAAAAAOABIAAgAYAAAAAAAPABIAAgAYAAAAAAAQABIAAgAYAAAAAAARABIAAgAYAAAAAAASABIAAgAYAAAAAAATABIAAgAYAAAAAAAUABIAAgAYAAAAAAAVABIAAgAYAAAAAAAWABIAAgAYAAAAAAAXABIAAgAYAAAAAAAYABIAAgAYAAAAAAAZABIAAgAYAAAAAAAaABIAAgAYAAAAAAAbABIAAgAYAAAAAAAdAAQAAgAYAAAAAAAeAAQAAgAYAAAAAAAfAAQAAgAYAAAAAAAfAAUAAgAYAAAAAAAfAAYAAgAYAAAAAAAfAAcAAgAYAAAAAAAfAAgAAgAYAAAAAAAfAAkAAgAYAAAAAAAeAAgAAgAYAAAAAAAeAAcAAgAYAAAAAAAdAAcAAgAYAAAAAAAdAAYAAgAYAAAAAAAdAAgAAgAYAAAAAAAdAAkAAgAYAAAAAAAdAAoAAgAYAAAAAAAdAAsAAgAYAAAAAAAdAAwAAgAYAAAAAAAdAA0AAgAYAAAAAAAdAA4AAgAYAAAAAAAdAA8AAgAYAAAAAAAdABAAAgAYAAAAAAAdABEAAgAYAAAAAAAdABIAAgAYAAAAAAAeABIAAgAYAAAAAAAfABIAAgAYAAAAAAAfABEAAgAYAAAAAAAfABAAAgAYAAAAAAAfAA8AAgAYAAAAAAAfAA4AAgAYAAAAAAAfAA0AAgAYAAAAAAAfAAwAAgAYAAAAAAAfAAsAAgAYAAAAAAAdAAEAAgAYAAQAAAAeAAEAAgAYAAQAAAAfAAEAAgAYAAQAAAABABQAAgAYAAAAAAACABQAAgAYAAAAAAADABQAAgAYAAAAAAAEABQAAgAYAAAAAAAFABQAAgAYAAAAAAAGABQAAgAYAAAAAAAHABQAAgAYAAAAAAAIABQAAgAYAAAAAAAJABQAAgAYAAAAAAAKABQAAgAYAAAAAAALABQAAgAYAAAAAAAMABQAAgAYAAAAAAANABQAAgAYAAAAAAAOABQAAgAYAAAAAAAPABQAAgAYAAAAAAAQABQAAgAYAAAAAAARABQAAgAYAAAAAAASABQAAgAYAAAAAAATABQAAgAYAAAAAAAUABQAAgAYAAAAAAAVABQAAgAYAAAAAAAWABQAAgAYAAAAAAAXABQAAgAYAAAAAAAYABQAAgAYAAAAAAAZABQAAgAYAAAAAAAaABQAAgAYAAAAAAAbABQAAgAYAAAAAAAcABQAAgAYAAAAAAAdABQAAgAYAAAAAAAeABQAAgAYAAAAAAAfABQAAgAYAAAAAAAhAAQAAgAYAAAAAAAiAAQAAgAYAAAAAAAjAAQAAgAYAAAAAAAkAAQAAgAYAAAAAAAhAAYAAgAYAAAAAAAiAAYAAgAYAAAAAAAjAAYAAgAYAAAAAAAjAAcAAgAYAAAAAAAkAAcAAgAYAAAAAAAkAAYAAgAYAAAAAAAhAAgAAgAYAAAAAAAiAAkAAgAYAAAAAAAiAAoAAgAYAAAAAAAhAAoAAgAYAAAAAAAhAAsAAgAYAAAAAAAhAAwAAgAYAAAAAAAhAA0AAgAYAAAAAAAhAA4AAgAYAAAAAAAhAA8AAgAYAAAAAAAhABAAAgAYAAAAAAAhABEAAgAYAAAAAAAhABIAAgAYAAAAAAAhABMAAgAYAAAAAAAhABQAAgAYAAAAAAAiABQAAgAYAAAAAAAjABQAAgAYAAAAAAAkABQAAgAYAAAAAAAkABMAAgAYAAAAAAAkABIAAgAYAAAAAAAkABEAAgAYAAAAAAAjABEAAgAYAAAAAAAjABAAAgAYAAAAAAAjAA8AAgAYAAAAAAAjAA4AAgAYAAAAAAAjAA0AAgAYAAAAAAAjAAwAAgAYAAAAAAAjAAsAAgAYAAAAAAAjAAoAAgAYAAAAAAAkAAoAAgAYAAAAAAAkAAkAAgAYAAAAAAAkAAsAAgAYAAAAAAAkAAwAAgAYAAAAAAAkAA0AAgAYAAAAAAAkAA4AAgAYAAAAAAAkAA8AAgAYAAAAAAAkABAAAgAYAAAAAAAjABIAAgAYAAAAAAAhAAEAAgAYAAQAAAAiAAEAAgAYAAQAAAAjAAEAAgAYAAQAAAAkAAEAAgAYAAQAAAA=")
+tile_set = ExtResource("2_0wfyh")
+collision_enabled = false
+
+[node name="World" type="Node2D" parent="." unique_id=1863732896]
+
+[node name="Table1" type="StaticBody2D" parent="World" unique_id=2083022963]
+position = Vector2(137, 152)
+collision_mask = 2
+script = ExtResource("3_jyhfs")
+draw_placeholder = false
+auto_generate_shapes = false
+
+[node name="Sprite2D" type="Sprite2D" parent="World/Table1" unique_id=752278849]
+texture = SubResource("AtlasTexture_n1nnj")
+
+[node name="Chair1" type="StaticBody2D" parent="World/Table1" unique_id=559904902]
+z_index = -10
+position = Vector2(-25, 0)
+collision_mask = 2
+script = ExtResource("5_tipki")
+
+[node name="Sprite2D" type="Sprite2D" parent="World/Table1/Chair1" unique_id=980962109]
+position = Vector2(52, -5)
+texture = SubResource("AtlasTexture_kquq6")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="World/Table1/Chair1" unique_id=827863717]
+position = Vector2(52, 0)
+shape = SubResource("RectangleShape2D_chair")
+debug_color = Color(7.70092e-06, 0.58591926, 0.7763248, 0.41960785)
+
+[node name="Chair2" type="StaticBody2D" parent="World/Table1" unique_id=352801588]
+z_index = -10
+collision_mask = 2
+script = ExtResource("5_tipki")
+
+[node name="Sprite2D" type="Sprite2D" parent="World/Table1/Chair2" unique_id=892664975]
+position = Vector2(-27, -4)
+texture = SubResource("AtlasTexture_5xiju")
+flip_h = true
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="World/Table1/Chair2" unique_id=1367421861]
+position = Vector2(-27, 1)
+shape = SubResource("RectangleShape2D_n1nnj")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="World/Table1" unique_id=1843415338]
+position = Vector2(0, -5)
+shape = SubResource("RectangleShape2D_table")
+
+[node name="Door" type="StaticBody2D" parent="World" unique_id=1200894138]
+position = Vector2(20, 1)
+collision_mask = 2
+script = ExtResource("5_o6xl0")
+walk_offset = Vector2(40, 100)
+spawn_offset = Vector2(32, 31)
+auto_generate_shapes = false
+
+[node name="Sprite2D" type="Sprite2D" parent="World/Door" unique_id=1622796311]
+position = Vector2(40, 31)
+texture = SubResource("AtlasTexture_hc7ip")
+
+[node name="Table2" type="StaticBody2D" parent="World" unique_id=889888145]
+position = Vector2(264, 151)
+collision_mask = 2
+script = ExtResource("3_jyhfs")
+draw_placeholder = false
+auto_generate_shapes = false
+
+[node name="Sprite2D" type="Sprite2D" parent="World/Table2" unique_id=728311484]
+texture = SubResource("AtlasTexture_n1nnj")
+
+[node name="Chair1" type="StaticBody2D" parent="World/Table2" unique_id=1818665178]
+z_index = -10
+position = Vector2(-25, 0)
+collision_mask = 2
+script = ExtResource("5_tipki")
+
+[node name="Sprite2D" type="Sprite2D" parent="World/Table2/Chair1" unique_id=1903499100]
+position = Vector2(52, -5)
+texture = SubResource("AtlasTexture_kquq6")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="World/Table2/Chair1" unique_id=1234306352]
+position = Vector2(52, 0)
+shape = SubResource("RectangleShape2D_chair")
+debug_color = Color(7.70092e-06, 0.58591926, 0.7763248, 0.41960785)
+
+[node name="Chair2" type="StaticBody2D" parent="World/Table2" unique_id=109136098]
+z_index = -10
+collision_mask = 2
+script = ExtResource("5_tipki")
+
+[node name="Sprite2D" type="Sprite2D" parent="World/Table2/Chair2" unique_id=1924154516]
+position = Vector2(-27, -4)
+texture = SubResource("AtlasTexture_5xiju")
+flip_h = true
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="World/Table2/Chair2" unique_id=84181166]
+position = Vector2(-27, 1)
+shape = SubResource("RectangleShape2D_n1nnj")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="World/Table2" unique_id=1203279700]
+position = Vector2(0, -5)
+shape = SubResource("RectangleShape2D_table")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1397408436]
+position = Vector2(304, 164)
+zoom = Vector2(2.2, 2.2)
+
+[node name="Counter" type="StaticBody2D" parent="." unique_id=1752492156]
+collision_mask = 2
+
+[node name="Sprite2D" type="Sprite2D" parent="Counter" unique_id=2134285342]
+position = Vector2(548, 183)
+scale = Vector2(1.1, 1.1)
+texture = SubResource("AtlasTexture_d5vy5")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Counter" unique_id=234125690]
+position = Vector2(548, 183.5)
+shape = SubResource("RectangleShape2D_hc7ip")

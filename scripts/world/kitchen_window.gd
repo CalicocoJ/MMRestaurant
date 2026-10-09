@@ -8,7 +8,21 @@ extends EntityBase
 ##   点柜台其余部分   → **没反应**（2026 玩家确认：只有点餐铃才弹窗，避免误触）
 ## 鼠标悬停时高亮当前会命中的那一块，避免玩家点错。
 
-var rect_size: Vector2 = Vector2(240, 60)
+## ── 编辑器摆放用的导出量（全部是**相对节点原点**的局部量）──
+##
+## 【为什么要分清局部 / 世界两套坐标】这个节点里头混着两种东西：
+##   出餐口 / 点餐铃的小矩形 —— 相对柜台左上角（局部），因为它们画在柜台上
+##   站位点                 —— 服务员要走到的地方（世界坐标）
+## 编辑器里摆的是局部量（跟着柜台走），绑定时再换算成世界坐标。
+## 混用这两套会导致「柜台挪了、铃铛还在原地」这类不报错的错位。
+@export var pickup_rect_local: Rect2 = Rect2(98, 55, 84, 40)
+@export var bell_rect_local: Rect2 = Rect2(236, 47, 64, 48)
+@export var kitchen_walk_offset: Vector2 = Vector2(170, 92)
+@export var pickup_walk_offset: Vector2 = Vector2(140, 92)
+
+## ── 运行时几何（由 setup / setup_from_editor 填好）──
+## 出餐口 / 点餐铃的小矩形与站位点，都是**局部坐标 / 世界坐标**混用，
+## 具体语义见 setup() 里的赋值和 setup_from_editor() 的换算。
 var pickup_rect: Rect2 = Rect2()
 ## 点餐铃小矩形（局部坐标）。玩家改版：从「点大矩形其余部分都弹窗」收敛到这一块。
 var bell_rect: Rect2 = Rect2()
@@ -55,6 +69,29 @@ func setup(p_body_rect: Rect2, p_pickup_rect: Rect2,
 	if not Game.kitchen_changed.is_connected(_rebind_counter):
 		Game.kitchen_changed.connect(_rebind_counter)
 	queue_redraw()
+
+
+## 碰撞盒：上部 72%（下方留出「站到柜台下缘取餐」的空间）。
+func collision_box_local() -> Rect2:
+	return Rect2(Vector2.ZERO, Vector2(rect_size.x, rect_size.y * 0.72))
+
+
+## 编辑器摆放后的自绑定。位置用节点自己的，其余几何来自导出量。
+##
+## 【小矩形为什么要再减一次原点】导出量已经是局部坐标，但 setup() 收到的是
+## 世界坐标下的矩形（它内部会减去 p_body_rect.position）。为了复用同一套
+## 已经在跑的 setup()，这里把局部量加回世界位置再传进去 ——
+## 复用比复制一份逻辑安全：柜台的三块几何（碰撞盒 / 出餐口 / 铃铛）
+## 只在一处实现，不会两套算法慢慢走歪。
+func setup_from_editor() -> void:
+	# 尺寸优先跟贴图走（在算 body 之前，否则 body 会用旧的默认尺寸）
+	fit_rect_size_to_sprite()
+	var body := Rect2(global_position, rect_size)
+	setup(body,
+		Rect2(global_position + pickup_rect_local.position, pickup_rect_local.size),
+		global_position + kitchen_walk_offset,
+		global_position + pickup_walk_offset,
+		Rect2(global_position + bell_rect_local.position, bell_rect_local.size))
 
 
 ## 把「出餐口内容变化」的订阅重新挂到**当前**的 Kitchen 上。
@@ -174,6 +211,18 @@ func _do_take(router: Node) -> bool:
 # ── 画 ─────────────────────────────────────────────────────────────
 
 func _draw() -> void:
+	# 【编辑器里只画参考线】柜台有三块可点区域 + 两个站位点，是最容易摆错的
+	# 一件家具（点错地方就没反应）。这里把它们全部标出来：
+	#   黄框 = 出餐口 / 点餐铃的可点范围（两个小矩形，点它们才有反应）
+	#   绿十字 = 两个站位点（去后厨 / 去取餐各一个）
+	if Engine.is_editor_hint():
+		_draw_gizmo_box(pickup_rect_local, Color(1.0, 0.9, 0.2, 0.18),
+			Color(1.0, 0.85, 0.3, 0.95))
+		_draw_gizmo_box(bell_rect_local, Color(1.0, 0.6, 0.2, 0.18),
+			Color(1.0, 0.7, 0.25, 0.95))
+		_draw_gizmo_walk(kitchen_walk_offset)
+		_draw_gizmo_walk(pickup_walk_offset)
+		return
 	var r := Rect2(Vector2.ZERO, rect_size)
 	draw_rect(r, body_color, true)
 	draw_rect(r, Color(0, 0, 0, 0.45), false, 2.0)

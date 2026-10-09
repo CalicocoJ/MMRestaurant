@@ -14,7 +14,8 @@ extends EntityBase
 ## 之前画过「出水口 + 杯子」的占位图案，会和标签叠在一起，
 ## 已与用户确认直接去掉 —— 等有真实美术素材时换成 Sprite2D 即可。
 
-var rect_size: Vector2 = Vector2(110, 100)
+## 站位点相对节点原点（家具左上角）的偏移。见 trash.gd 里的同类说明。
+@export var walk_offset: Vector2 = Vector2(-25, 95)
 var _walk: Vector2 = Vector2.ZERO
 
 
@@ -28,6 +29,23 @@ func setup(p_rect: Rect2, p_walk: Vector2) -> void:
 	setup_shape(Rect2(Vector2.ZERO, rect_size), col)
 	body_color = Constants.COLOR_DRINK_MACHINE
 	_walk = p_walk
+
+
+## 碰撞盒：上部 75%（下方留空，让服务员能站到机器下沿）。
+func collision_box_local() -> Rect2:
+	return Rect2(Vector2.ZERO, Vector2(rect_size.x, rect_size.y * 0.75))
+
+
+## 编辑器摆放后的自绑定。
+func setup_from_editor() -> void:
+	kind = Constants.Kind.DRINK
+	label = "饮料机"
+	display_label = label
+	_clear_body_shapes()
+	fit_rect_size_to_sprite()
+	setup_shape(Rect2(Vector2.ZERO, rect_size), collision_box_local())
+	body_color = Constants.COLOR_DRINK_MACHINE
+	_walk = global_position + walk_offset
 
 
 func walk_to() -> Vector2:
@@ -54,3 +72,12 @@ func _do_open(router: Node) -> bool:
 		return false
 	router.ui.open_drink_machine()
 	return true
+
+
+func _draw() -> void:
+	# 【编辑器里只画参考线】本类原来没有 _draw()（外观全交给 EntityBase），
+	# 这里新增它，唯一目的就是在编辑器视口画站位点参考线。
+	if Engine.is_editor_hint():
+		_draw_gizmo_walk(walk_offset)
+		return
+	super._draw()

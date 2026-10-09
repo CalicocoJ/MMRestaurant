@@ -5,7 +5,14 @@ extends EntityBase
 ## 手上有餐 → 走过去 → 到达时再检查手上有餐 → 丢掉。
 ## 手上没餐 → 原地飘字「手上没有餐品」，连走都不走。
 
-var rect_size: Vector2 = Vector2(60, 60)
+## 站位点相对**节点原点（家具左上角）**的偏移。
+##
+## 【为什么存偏移而不是世界坐标】家具可以被你拖到任意位置，
+## 存世界坐标的话一拖动就失效（而且不报错，只是服务员走到老地方去）。
+## 存偏移就自动跟着家具走。
+@export var walk_offset: Vector2 = Vector2(90, 20)
+
+## 服务员该站哪（世界坐标）。由 setup / setup_from_editor 填好，walk_to() 读它。
 var _walk: Vector2 = Vector2.ZERO
 
 
@@ -20,6 +27,24 @@ func setup(p_rect: Rect2, p_walk: Vector2) -> void:
 	setup_shape(Rect2(Vector2.ZERO, rect_size), col)
 	body_color = Constants.COLOR_TRASH
 	_walk = p_walk
+
+
+## 碰撞盒：下部 85%（上部 15% 留空，让服务员能贴到桶身边上）。
+func collision_box_local() -> Rect2:
+	return Rect2(Vector2(0, rect_size.y * 0.15),
+		Vector2(rect_size.x, rect_size.y * 0.85))
+
+
+## 编辑器摆放后的自绑定：位置用节点自己的，尺寸和站位点用导出的。
+func setup_from_editor() -> void:
+	kind = Constants.Kind.TRASH
+	label = "垃圾桶"
+	display_label = label
+	_clear_body_shapes()
+	fit_rect_size_to_sprite()
+	setup_shape(Rect2(Vector2.ZERO, rect_size), collision_box_local())
+	body_color = Constants.COLOR_TRASH
+	_walk = global_position + walk_offset
 
 
 func walk_to() -> Vector2:
@@ -49,6 +74,11 @@ func _do_trash(router: Node) -> bool:
 
 
 func _draw() -> void:
+	# 【编辑器里只画参考线】见 entity_base.gd 顶部「编辑器可视化」那一节。
+	# 不画占位色块，免得盖住你自己贴的 Sprite2D。
+	if Engine.is_editor_hint():
+		_draw_gizmo_walk(walk_offset)
+		return
 	super._draw()
 	var r := Rect2(Vector2.ZERO, rect_size)
 	var cx := r.size.x * 0.5

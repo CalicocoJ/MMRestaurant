@@ -28,10 +28,21 @@ const TRASH_SCRIPT := preload("res://scripts/world/trash.gd")
 const DOOR_SCRIPT := preload("res://scripts/world/door.gd")
 const WAITER_SCRIPT := preload("res://scripts/actors/waiter.gd")
 const CUSTOMER_SCRIPT := preload("res://scripts/actors/customer.gd")
-const FLOOR_SCRIPT := preload("res://scripts/level/floor_art.gd")
 const PATHFINDER_SCRIPT := preload("res://scripts/core/pathfinder.gd")
 ## 服务员身体半径：寻路外扩量要跟它对齐（见下面 build 的说明）
 const WAITER_RADIUS := 16.0
+
+## 地板 / 墙的图块层，由**编辑器摆放**（挂在 Level 下的 TileMapLayer 节点）。
+##
+## 【为什么用 @export 而不是写死 get_node("Floor")】
+## 导出变量会在检查器里显示出来，节点改名或漏挂时一眼可见，
+## 而不是静默拿到 null —— 那正是最难查的那类 bug。
+##
+## 【留空的兜底】没在检查器里指定时，自动找 Level 下名为 "Floor" 的子节点，
+## 见 _resolve_floor_layer()。所以编辑器里那一栏不填也能跑。
+@export var floor_layer: TileMapLayer = null
+## 自动查找时用的子节点名。改名要跟这里一起改。
+const FLOOR_LAYER_NAME := "Floor"
 
 ## 是否在开局弹出「开始界面」（点了开始游戏才进入游戏）。
 ##
@@ -47,6 +58,27 @@ const WAITER_RADIUS := 16.0
 ##   测试 / 工具加载同一个 main.tscn：至少有一个不成立 → 不出、不暂停
 ## 两条都算，是因为单看任一条都有反例（详见下面的注释）。
 @export var show_start_screen: bool = false
+
+## 强制按 data/layout.json 生成整套家具，**忽略 World 下已经摆好的东西**。
+##
+## 【为什么必须有这个开关】这是「设计场景」和「测试」共存的唯一办法。
+##
+## 从这一步起，`main.tscn` 变成**你设计关卡的地方**：World 下会逐渐摆满家具。
+## 但那 40 多个工具脚本实例化的**正是同一个 main.tscn**
+## （实测：World 里只放了一张桌子，测试通过数就从 206 掉到 166）——
+## 因为工具的断言全都建立在「layout.json 那套坐标」上。
+##
+## 两种用途对同一个场景的要求是**互斥**的：
+##   游戏要跑 → 用你摆的家具
+##   测试要跑 → 用 layout.json 那套（断言写的是它）
+## 所以用一个显式开关把两者分开，而不是让它们互相污染。
+##
+## 【用法（工具脚本里）】实例化之后、add_child 之前设成 true：
+##     var lv := (load("res://scenes/main.tscn") as PackedScene).instantiate()
+##     lv.set("force_generated_layout", true)   # ← 必须在 add_child 之前
+##     get_tree().root.add_child(lv)
+## 顺序很重要：`_ready()` 在 add_child 时同步触发，而这套搭建逻辑跑在 _ready 里。
+@export var force_generated_layout: bool = false
 
 var world: Node2D = null
 var actors: Node2D = null
@@ -70,7 +102,7 @@ var seated_total: int = 0
 
 func _ready() -> void:
 	Game.reset()
-	_build_background()
+	_setup_background()
 	_build_world()
 	_build_actors()
 	_build_systems()
@@ -127,88 +159,285 @@ func _is_game_entry() -> bool:
 
 # ── 搭建 ───────────────────────────────────────────────────────────
 
-func _build_background() -> void:
-	var bg := ColorRect.new()
-	bg.name = "Background"
-	bg.color = Constants.COLOR_BG
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var cl := CanvasLayer.new()
-	cl.name = "BackgroundLayer"
-	cl.layer = -10
-	cl.add_child(bg)
-	add_child(cl)
+## 背景：地板 / 墙由编辑器摆的 TileMapLayer 负责，这里只做「找图块层 + 兜底」。
+##
+## 【为什么图块层没铺满时要垫一个纯色底】
+## 图块层是**稀疏**的 —— 没刷格子的地方是透明的。不垫底的话，
+## 边缘没铺到的区域会露出引擎默认的清屏色（近黑），看起来像「贴图丢了」。
+## 垫一层 COLOR_BG 就只是「深色地板」，不像故障。
+##
+## 【为什么用 CanvasLayer(layer=-10) 而不是 z_index】
+## 它要垫在**所有**默认层内容之下，包括以后可能加的其他图层；
+## CanvasLayer 的层级是绝对的，不会被后续节点的 z_index 意外盖住。
+func _setup_background() -> void:
+	_resolve_floor_layer()
+	if not _has_visible_tiles():
+		var bg := ColorRect.new()
+		bg.name = "Background"
+		bg.color = Constants.COLOR_BG
+		bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+		bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var cl := CanvasLayer.new()
+		cl.name = "BackgroundLayer"
+		cl.layer = -10
+		cl.add_child(bg)
+		add_child(cl)
 
-	var floor_art := Node2D.new()
-	floor_art.set_script(FLOOR_SCRIPT)
-	floor_art.name = "FloorArt"
-	add_child(floor_art)
+
+## 拿到图块层引用：先看检查器里指定的，没有再按名字自动找。
+##
+## 【为什么要有自动查找这一步】编辑器那边「新建节点 + 拖引用」是两件事，
+## 漏掉第二件就会静默变回纯色底，而人只会看到「地板没生效」。
+## 自动查找让「节点名对了就生效」，把两件事减成一件。
+func _resolve_floor_layer() -> void:
+	if floor_layer != null and is_instance_valid(floor_layer):
+		return
+	var found := get_node_or_null(NodePath(FLOOR_LAYER_NAME))
+	if found is TileMapLayer:
+		floor_layer = found
+
+
+## 图块层上有没有已经刷好的格子？
+##
+## 【为什么要先问这个】把「该不该垫底色」和「有没有真的铺地板」解耦：
+##   - 还没建 TileMap   → 垫底，游戏照常能玩（**迁移期必须**）
+##   - 建了但一格没刷   → 垫底，不会变成一片黑
+##   - 刷了至少一格     → 不垫底，纯看贴图
+##
+## 【为什么取不到格子时保守返回 false】
+## 「有没有刷格子」的 API 名在不同 Godot 小版本里改过。这里不赌版本：
+## 取不到就当成「没刷」，宁可多垫一层（垫层是隐形的，图块不透明时完全被盖住），
+## 也不要因为方法不存在而报错 —— 那会让游戏直接跑不起来。
+func _has_visible_tiles() -> bool:
+	if floor_layer == null or not is_instance_valid(floor_layer):
+		return false
+	if floor_layer.has_method("get_used_cells"):
+		var used: Array = floor_layer.call("get_used_cells")
+		return not used.is_empty()
+	if floor_layer.has_method("get_used_cells_by_id"):
+		var used2: Array = floor_layer.call("get_used_cells_by_id", 0)
+		return not used2.is_empty()
+	return false
+
+
+## 家具统一的「由编辑器摆放后自绑定」入口名。
+##
+## 【为什么用具名常量而不是散落的字符串】家具脚本和这里必须约定同一个名字，
+## 拼错就会**静默**变成「没采纳、走了生成分支」——那种 bug 不报错、只是
+## 你摆的东西不生效。放在一处，改的时候只改一个地方。
+const EDITOR_SETUP := "setup_from_editor"
 
 
 func _build_world() -> void:
-	world = Node2D.new()
-	world.name = "World"
-	add_child(world)
+	# 【World 节点的来路有两条】
+	#   ① main.tscn 里已经有（模块化之后的正规形态）→ 直接复用
+	#   ② 没有 → 运行时创建（保证 35 个工具脚本照旧能跑）
+	# 两条都必须支持：工具是 `load("res://scenes/main.tscn").instantiate()`，
+	# 它们拿到的是同一个 main.tscn，不能因为改成编辑器摆放就全体失效。
+	world = get_node_or_null("World") as Node2D
+	if world == null:
+		world = Node2D.new()
+		world.name = "World"
+		add_child(world)
 
-	var lay := Config.layout
-	# 家具都要挡人，所以统一建成 StaticBody2D（= WorldObject 的原生类型）
+	# 【按种类补齐，而不是「有摆放就全不生成」】
+	#
+	# 你可以在编辑器里只摆一部分家具（比如先只摆 1 张桌子试试），
+	# 没摆的那些仍然按 layout.json 生成一个能用的占位版。
+	#
+	# 【为什么必须这样】早先的判据是「World 下有子节点就只采纳编辑器家具」，
+	# 于是你摆了 1 张桌子之后，**后厨台 / 饮料机 / 垃圾桶 / 门口全都不再生成**：
+	#   门口不生成 → Door.setup() 没被调用 → 客人从硬编码的默认坐标冒出来；
+	#   柜台不生成 → 取餐、点单铃全都没了。
+	# 整局直接玩不了，而且**不报错**。按种类补齐就没有这个断层：
+	# 你摆一件、就接管一件，其余照旧。
+	if force_generated_layout:
+		# 测试模式：把你摆的家具整个让开，全部按 layout.json 生成 ——
+		# 工具的断言写的是 layout.json 那套坐标，不能被设计场景干扰。
+		# 【为什么用 free() 而不是 queue_free()】queue_free 是「本帧末再删」，
+		# 而下面的生成是**同步**进行的：那些节点这时还在树里，
+		# _has_kind() 会照样看见它们 → 又变成「不生成」，测试依旧失败。
+		# 这里要的是「立刻让开」，所以用立即释放。
+		for child in world.get_children():
+			world.remove_child(child)
+			child.free()
+	else:
+		_adopt_authored_furniture()
+	_generate_missing_furniture()
 
-	# 桌子（自带座位 / 椅子）
-	for entry in lay.get("tables", []):
-		var t := StaticBody2D.new()
-		t.set_script(TABLE_SCRIPT)
-		t.name = "Table%d" % int(entry.get("id", 0))
-		world.add_child(t)
-		t.call("setup", int(entry.get("id", 0)),
-			EntityBase.from_array(entry.get("rect", [])),
-			_parse_seats(entry.get("seats", [])))
-		Game.register_table(t)
-
-	# 后厨 / 出餐口
-	var kw: Dictionary = lay.get("kitchen_window", {})
-	var kw_node := StaticBody2D.new()
-	kw_node.set_script(KITCHEN_SCRIPT)
-	kw_node.name = "KitchenWindow"
-	world.add_child(kw_node)
-	kw_node.call("setup",
-		EntityBase.from_array(kw.get("rect", []), Rect2(420, 20, 240, 60)),
-		EntityBase.from_array(kw.get("pickup_rect", []), Rect2(498, 50, 84, 30)),
-		EntityBase.point_from_array(kw.get("walk", []), Vector2(540, 150)),
-		EntityBase.point_from_array(kw.get("pickup_walk", []), Vector2(540, 140)),
-		EntityBase.from_array(kw.get("bell_rect", []), Rect2(0, 0, 0, 0)))
-
-	# 饮料机
-	var dm: Dictionary = lay.get("drink_machine", {})
-	var dm_node := StaticBody2D.new()
-	dm_node.set_script(DRINK_SCRIPT)
-	dm_node.name = "DrinkMachine"
-	world.add_child(dm_node)
-	dm_node.call("setup",
-		EntityBase.from_array(dm.get("rect", []), Rect2(860, 20, 80, 60)),
-		EntityBase.point_from_array(dm.get("walk", []), Vector2(840, 150)))
-
-	# 垃圾桶
-	var tr: Dictionary = lay.get("trash", {})
-	var tr_node := StaticBody2D.new()
-	tr_node.set_script(TRASH_SCRIPT)
-	tr_node.name = "Trash"
-	world.add_child(tr_node)
-	tr_node.call("setup",
-		EntityBase.from_array(tr.get("rect", []), Rect2(180, 640, 60, 60)),
-		EntityBase.point_from_array(tr.get("walk", []), Vector2(270, 660)))
-
-	# 门口
-	var dr: Dictionary = lay.get("door", {})
-	var dr_node := StaticBody2D.new()
-	dr_node.set_script(DOOR_SCRIPT)
-	dr_node.name = "Door"
-	world.add_child(dr_node)
-	dr_node.call("setup",
-		EntityBase.from_array(dr.get("rect", []), Rect2(560, 640, 120, 40)),
-		EntityBase.point_from_array(dr.get("walk", []), Vector2(620, 600)),
-		EntityBase.point_from_array(dr.get("spawn", []), Vector2(620, 600)))
-
+	# table_id 必须在**选座和寻路之前**定下来：客人落座靠 Game.tables 的顺序，
+	# 而寻路网格吃掉的是家具的碰撞盒。
+	_renumber_tables()
 	_build_pathfinder()
+
+
+## 采纳编辑器摆好的家具：逐个自绑定 + 注册。
+##
+## 【为什么按索引取 child，而不是取名字】家具名可以随你改，
+## 名称不参与任何逻辑；唯一有语义的是「挂在 World 下」和「实现了自绑定入口」。
+func _adopt_authored_furniture() -> void:
+	var kids := world.get_children()
+	for i in kids.size():
+		var child := kids[i]
+		if not child.has_method(EDITOR_SETUP):
+			# 不是家具（比如你摆的装饰物）→ 跳过，不报错
+			continue
+		child.call(EDITOR_SETUP)
+		_register_if_table(child)
+
+
+## 采纳之后：World 里还缺哪几种家具，就按 layout.json 生成哪几种。
+##
+## 【判据是 kind，不是名字】`kind` 是家具自己声明的「我是什么」
+## （桌子 = TABLE、柜台 = COUNTER…），ClickRouter 也靠它分辨点击目标。
+## 用 kind 判断意味着：**你把柜台节点改名叫「点餐台」也照样认得出来**。
+func _generate_missing_furniture() -> void:
+	var lay := Config.layout
+
+	if not _has_kind(Constants.Kind.TABLE):
+		for entry in lay.get("tables", []):
+			var t := StaticBody2D.new()
+			t.set_script(TABLE_SCRIPT)
+			t.name = "Table%d" % int(entry.get("id", 0))
+			world.add_child(t)
+			t.call("setup", int(entry.get("id", 0)),
+				EntityBase.from_array(entry.get("rect", [])),
+				_parse_seats(entry.get("seats", [])),
+				1)   # 1 = 顺便生成椅子碰撞盒（这条路径没有 Chair 节点）
+			_register_if_table(t)
+
+	if not _has_kind(Constants.Kind.COUNTER):
+		var kw: Dictionary = lay.get("kitchen_window", {})
+		var kw_node := StaticBody2D.new()
+		kw_node.set_script(KITCHEN_SCRIPT)
+		kw_node.name = "KitchenWindow"
+		world.add_child(kw_node)
+		kw_node.call("setup",
+			EntityBase.from_array(kw.get("rect", []), Rect2(420, 20, 240, 60)),
+			EntityBase.from_array(kw.get("pickup_rect", []), Rect2(498, 50, 84, 30)),
+			EntityBase.point_from_array(kw.get("walk", []), Vector2(540, 150)),
+			EntityBase.point_from_array(kw.get("pickup_walk", []), Vector2(540, 140)),
+			EntityBase.from_array(kw.get("bell_rect", []), Rect2(0, 0, 0, 0)))
+
+	if not _has_kind(Constants.Kind.DRINK):
+		var dm: Dictionary = lay.get("drink_machine", {})
+		var dm_node := StaticBody2D.new()
+		dm_node.set_script(DRINK_SCRIPT)
+		dm_node.name = "DrinkMachine"
+		world.add_child(dm_node)
+		dm_node.call("setup",
+			EntityBase.from_array(dm.get("rect", []), Rect2(860, 20, 80, 60)),
+			EntityBase.point_from_array(dm.get("walk", []), Vector2(840, 150)))
+
+	if not _has_kind(Constants.Kind.TRASH):
+		var tr: Dictionary = lay.get("trash", {})
+		var tr_node := StaticBody2D.new()
+		tr_node.set_script(TRASH_SCRIPT)
+		tr_node.name = "Trash"
+		world.add_child(tr_node)
+		tr_node.call("setup",
+			EntityBase.from_array(tr.get("rect", []), Rect2(180, 640, 60, 60)),
+			EntityBase.point_from_array(tr.get("walk", []), Vector2(270, 660)))
+
+	if not _has_kind(Constants.Kind.DOOR):
+		var dr: Dictionary = lay.get("door", {})
+		var dr_node := StaticBody2D.new()
+		dr_node.set_script(DOOR_SCRIPT)
+		dr_node.name = "Door"
+		world.add_child(dr_node)
+		dr_node.call("setup",
+			EntityBase.from_array(dr.get("rect", []), Rect2(560, 640, 120, 40)),
+			EntityBase.point_from_array(dr.get("walk", []), Vector2(620, 600)),
+			EntityBase.point_from_array(dr.get("spawn", []), Vector2(620, 600)))
+
+
+## World 下有没有至少一件某种 kind 的家具？
+func _has_kind(k: int) -> bool:
+	for child in world.get_children():
+		if int(child.get("kind")) == k:
+			return true
+	return false
+
+
+## 是桌子就登记进 Game.tables，其余不登记。
+##
+## 【为什么按「有没有 table_id」判断类型，而不是判 is Table】
+## 全工程一贯用鸭子类型（没有任何一处 is/as 具体家具类型），这里保持一致：
+## 只有桌子才有 table_id 字段，所以「有这个字段」就是「是桌子」。
+## 好处是以后你新加一种「也能坐人」的家具（比如吧台），只要给它 table_id
+## 就自动被这套逻辑接纳，不用改这里。
+func _register_if_table(child: Node) -> void:
+	if child.get("table_id") == null:
+		return
+	Game.register_table(child)
+
+
+## 编号用的排序键：先按 y 分行（行内视为同一排），行内再按 x 从左到右。
+##
+## 【为什么要抽成函数，而不是写在排序 lambda 里】
+## lambda 的参数是 `Node`，`a.global_position` 拿到的静态类型是 Variant，
+## GDScript 无法据此推断局部变量的类型 —— 会直接**解析失败**
+## （`Cannot infer the type of "ay"`）。抽成一个返回 float 的函数就没有这个问题。
+##
+## 【为什么 y 要量化到 20px 的倍数】
+## 同一排的桌子 y 未必严格相等（手摆时差一两个像素），
+## 直接比较浮点会让「同一排」的判定变得随机。按半个格子量化，
+## 同一排稳定归为同一个键。
+static func _table_sort_key(t: Node) -> float:
+	var pos: Vector2 = t.global_position
+	var row := floorf(pos.y / 20.0)
+	return row * 100000.0 + pos.x
+
+
+## 给桌子定 table_id：手工优先，其余自动编号。
+##
+## 【为什么需要自动编号】Table.tscn 会被实例化多次（3 张桌 = 3 个实例），
+## 而「实例之间必须有不同的 table_id」这件事没法写在一个 .tscn 里。
+## 让代码按位置自动编号，你复制粘贴桌子时就不需要记得改编号。
+##
+## 【手工覆盖怎么生效】Table 上有个 `auto_table_id`（默认 true）。
+## 把它关掉并手填 `table_id`，那张桌就跳过编号 —— 例如你要让某张桌固定叫「桌1」。
+## 自动编号只会分配**没被手工占用**的号，所以两种方式能混用。
+##
+## 【为什么是「全部自动」而不是「只要有一个手填就整体放弃」】
+## 后者是个陷阱：你手填了一张桌的编号，另外两张悄悄保留重复的 0，
+## 而 0 也是合法编号 —— 不报错，只是选座顺序变得不可预期。
+##
+## 【排序规则：先按 y 分行、再按 x 从左到右】
+## 复刻 layout.json 里「左/中/右三列 × 上/下两排」的既有约定，
+## 让编号顺序可预期、可测试（不依赖场景树顺序）。
+func _renumber_tables() -> void:
+	var tables: Array = []
+	for child in world.get_children():
+		if child.get("table_id") != null:
+			tables.append(child)
+	if tables.is_empty():
+		return
+
+	tables.sort_custom(func(a: Node, b: Node) -> bool:
+		return _table_sort_key(a) < _table_sort_key(b))
+
+	# 先记下手工占用的编号（关掉 auto_table_id 的那些）
+	var taken: Array[int] = []
+	for t in tables:
+		if not bool(t.get("auto_table_id")):
+			taken.append(int(t.get("table_id")))
+
+	# 再按位置顺序，给自动的那些分配未被占用的最小可用编号
+	var next := 1
+	for t in tables:
+		if bool(t.get("auto_table_id")):
+			while taken.has(next):
+				next += 1
+			t.set("table_id", next)
+			taken.append(next)
+			next += 1
+		# 标签由编号推出，必须在编号定下来之后刷新
+		# （HUD 和左侧订单票显示的就是它）
+		var label := "桌%d" % int(t.get("table_id"))
+		t.set("label", label)
+		t.set("display_label", label)
+
 
 
 ## 建立寻路网格。
@@ -220,18 +449,7 @@ func _build_world() -> void:
 ## 以后要是加了会动的家具，记得在这里重建。
 func _build_pathfinder() -> void:
 	var obstacles: Array = []
-	for child in world.get_children():
-		# 每件家具的**每一个碰撞形状**分别作为障碍（桌子 + 每把椅子）。
-		#
-		# 【不要用合并矩形】曾经把桌子和椅子并成一块喂进来，想消灭它们之间
-		# 那条 8px 窄缝；结果椅子那块也被封死，座位在网格里变得不可达，
-		# 目标点落在障碍内部 → A* 只能给斜线（玩家反馈的「靠近桌椅就出斜线」）。
-		# 现在分开喂：椅子下方开放、座位可达，而那条窄缝靠「外扩 ≥ 服务员半径」
-		# 自动被吃掉（它本来也过不去）。
-		if child.has_method("collision_shapes_global"):
-			for box in child.call("collision_shapes_global"):
-				if box.size.x > 0.0 and box.size.y > 0.0:
-					obstacles.append(box)
+	_collect_obstacles(world, obstacles)
 	var pf := Node.new()
 	pf.set_script(PATHFINDER_SCRIPT)
 	pf.name = "Pathfinder"
@@ -248,6 +466,29 @@ func _build_pathfinder() -> void:
 	# 完全不需要物理去推 —— 贴边和绕路两个问题一起消失。
 	pf.call("build", obstacles, WAITER_RADIUS + 2.0)
 	pathfinder = pf
+
+
+## 递归收集所有家具的碰撞形状，喂给寻路网格。
+##
+## 【每件家具的每一个碰撞形状分别作为障碍】
+## 【不要用合并矩形】曾经把桌子和椅子并成一块喂进来，想消灭它们之间
+## 那条 8px 窄缝；结果椅子那块也被封死，座位在网格里变得不可达，
+## 目标点落在障碍内部 → A* 只能给斜线（玩家反馈的「靠近桌椅就出斜线」）。
+## 分开喂：椅子下方开放、座位可达，窄缝靠「外扩 ≥ 服务员半径」自动吃掉。
+##
+## 【为什么要递归，而不是只看 World 的直接子节点】
+## 椅子现在是**挂在桌子下面的独立 StaticBody2D**（这样它才能自己拥有碰撞盒）。
+## 只遍历直接子节点的话，所有椅子的碰撞盒都会被**静默漏掉** ——
+## 表现是「服务员穿过椅子走过去」，不报错，很难查。
+func _collect_obstacles(node: Node, out: Array) -> void:
+	for child in node.get_children():
+		if child.has_method("collision_shapes_global"):
+			for box in child.call("collision_shapes_global"):
+				if box.size.x > 0.0 and box.size.y > 0.0:
+					out.append(box)
+		# 继续往下找（桌子的子节点里挂着椅子）
+		if child.get_child_count() > 0:
+			_collect_obstacles(child, out)
 
 
 ## 把 layout.json 里的 seats 数组解析成 Table.setup 要的形式

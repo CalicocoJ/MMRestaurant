@@ -1,0 +1,255 @@
+@tool
+extends EntityBase
+## 柜台上的一份食物（**可点击的取餐点**）。
+##
+## 【它替代了什么】原来是「点餐铃 → 弹出后厨 UI → 点菜加入制作队列 →
+## 等 3 秒 → 出餐口取餐」这一整条链路。现在改成：
+## **柜台上直接摆着做好的食物，点它就取一份。** 制作过程整个去掉。
+##
+## 【节点怎么摆】
+##   CounterFood (StaticBody2D)   ← 挂在 **World** 下，挂本脚本
+##   └── Sprite2D                 ← 食物贴图
+##
+## 【两个必须遵守的约定，否则会静默失效】
+##   1. **必须挂在 `World` 下**（不能挂在柜台节点下）—— ClickRouter 只遍历
+##      `World` 的直接子节点来找可点物件。挂在柜台下就**点不到，且不报错**。
+##   2. **不挡人**（本脚本的碰撞盒返回空矩形）。柜台的阻挡由**柜台自己的
+##      `StaticBody2D` + `CollisionShape2D`** 负责，两者分工。
+##
+## 【和订单的关系】`item_id` 用的是和 `data/menu.json` / 订单票**同一个 id**
+## （`fries`、`burger`…）。上菜时 `Table.assign_delivery()` 按 id 找到
+## 「还没拿到这道菜的客人」，所以只要 id 对得上，整条上菜链路完全复用。
+##
+## ⚠️ **【重要约束】柜台上必须摆齐本关菜单里的每一道菜。**
+## 客人是从「本关可用的全部餐品」里随机点单的（`Config.pool_at(关卡)`），
+## 所以**少摆一样，点到它的那桌就永远上不了菜**——客人会一直等、最后气走，
+## 而**不会报任何错**。加菜单时记得同时在柜台上加一个节点。
+
+## 这道菜是什么（对应 `data/menu.json` 里的 id）。
+##
+## 【为什么是下拉而不是手输】手输字符串一旦拼错（`fries` 打成 `fires`），
+## 后果是**这道菜永远送不出去、也不报错**——属于最难查的一类问题。
+## 下拉的候选值直接从 `Config.kitchen_items` 来，所以**加了新菜会出现在列表里**。
+## 下拉由本文件底部的 `_get_property_list()` 动态生成（见那里的说明）。
+##
+## 【为什么不写成 `@export`】因为下面的 `_get_property_list()` 会用同名属性
+## 覆盖它来生成下拉，两者同时存在时 setter 的调用时机不确定。
+## 干脆不用 setter —— 颜色在 `_draw()` 里现算，省掉一个状态同步点。
+var item_id: String = ""
+
+## 服务员来取餐时站的位置（相对本节点原点的偏移）。
+##
+## 【为什么必须有它】食物本身不挡人，而柜台挡人。如果站位点就在食物正上方，
+## 服务员会被柜台挡住、停在柜台边，却以为"还没到"→ 卡住或反复找落脚点。
+## 所以把站位点设在**柜台朝房间那一侧的外沿**，服务员就停在你能看到的位置。
+## 编辑器视口里显示为绿十字。
+@export var walk_offset: Vector2 = Vector2(0, 20)
+
+## 从第几关开始出现在柜台上（1 = 一开始就有）。
+##
+## 【为什么在这里而不是只读 menu.json】关卡内容属于**场景摆放**的一部分
+## ——「第一关柜台左边放薯条」这句话，描述的是场景。放一个数字在节点上，
+## 复制粘贴食物节点时也跟着走。
+## 关卡进阶时，代码会把未解锁的节点隐藏（连点击一起失效）。
+@export var start_level: int = 1
+
+var _walk: Vector2 = Vector2.ZERO
+
+
+## 碰撞盒：**空**。食物不挡人。
+##
+## 【为什么可以没有碰撞盒】柜台的阻挡由柜台自己的碰撞体负责。
+## 食物只是"贴在柜台上的可点标记"，让它也挡人会导致
+## 「柜台边缘多出一堆小碰撞盒」，服务员贴边时会莫名其妙地卡。
+func collision_box_local() -> Rect2:
+	return Rect2()
+
+
+func _ready() -> void:
+	super._ready()
+	if Engine.is_editor_hint():
+		return
+	# 开局先按当前关卡决定自己在不在柜台上
+	_apply_level_visibility()
+
+
+## 编辑器摆放后的自绑定。Level 在 _build_world() 里对 World 的每个子节点调用。
+func setup_from_editor() -> void:
+	kind = Constants.Kind.COUNTER
+	label = ""
+	display_label = ""
+	# 先把尺寸同步到贴图，再建几何（这里碰撞盒是空的，所以只是同步 rect）
+	_apply_geometry()
+	_walk = global_position + walk_offset
+	_apply_level_visibility()
+
+
+## 按当前关卡显示/隐藏自己。
+##
+## 【为什么隐藏还要连点击一起失效】只把 `visible` 设成 false，节点仍然在
+## `World` 下、仍然会被 `ClickRouter` 遍历到 —— 于是**你看不到它，却能点到它**。
+## 那种「点了空气却取到一份餐」的 bug 极难理解，所以隐藏时把点击范围也清空。
+func _apply_level_visibility() -> void:
+	var lv := 1
+	if Engine.is_editor_hint():
+		# 编辑器里不按关卡隐藏，否则你没法摆后面关卡才出现的食物
+		visible = true
+		queue_redraw()
+		return
+	lv = Game.level_index
+	var on := Config.item_available_at(item_id, lv) if item_id != "" else false
+	visible = on
+	queue_redraw()
+
+
+## 现在能不能点（ClickRouter 会调它）。
+func accepts_click() -> bool:
+	if item_id == "":
+		return false          # 还没填菜名，别吃掉点击
+	if Engine.is_editor_hint():
+		return false
+	if not visible:
+		return false
+	return true
+
+
+## 点击范围 = 贴图范围（所见即所得）。没填贴图或没填菜名时返回空 → 不可点。
+func click_rect() -> Rect2:
+	if item_id == "":
+		return Rect2()
+	if not (Engine.is_editor_hint()) and not visible:
+		return Rect2()
+	return rect
+
+
+func walk_to() -> Vector2:
+	return _walk
+
+
+## 点击：手上有空位就走过去取，满了就原地飘字。
+##
+## 【为什么"走过去再取"而不是"点了立刻拿到"】这是这个游戏的核心手感
+## （跑腿时间就是压力来源）。而且饮品机、垃圾桶都是这个模式，保持一致。
+func interact(router: Node) -> int:
+	if not accepts_click():
+		return RouterResult.NO_ACTION
+	if Game.hand_is_full():
+		router.say(Constants.MSG_HANDS_FULL)
+		return RouterResult.NO_ACTION
+	router.go_then(_walk, Callable(self, "_do_take"), "去取" + _display_name())
+	return RouterResult.ACCEPTED
+
+
+## 到达时**再检查一遍**（这段时间里手可能满了、关卡可能换了）。
+## 返回 false = 动作取消，服务员停在原地。
+func _do_take(router: Node) -> bool:
+	if not accepts_click():
+		return false
+	if Game.hand_is_full():
+		router.say(Constants.MSG_HANDS_FULL)
+		return false
+	if not router.take_into_hand(item_id):
+		return false
+	router.say_at(global_position + Vector2(0, -12), "+1 " + _display_name(),
+		Constants.COLOR_TEXT)
+	return true
+
+
+func _display_name() -> String:
+	if item_id == "":
+		return "食物"
+	return Config.item_name(item_id)
+
+
+## 占位美术：代码画的色块（还没有贴图时让你看得见东西），用菜单里的 color。
+##
+## 【和桌椅的 draw_placeholder 保持一致的做法】贴图挂好之后把它关掉，
+## 否则色块会盖住贴图。
+@export var draw_placeholder: bool = true
+
+
+func _draw() -> void:
+	if Engine.is_editor_hint():
+		# 编辑器里只画参考线：站位点（绿）+ 可点范围（黄，由基类画）
+		_draw_gizmo_walk(walk_offset)
+		return
+	if not draw_placeholder:
+		return
+	if item_id == "":
+		return
+	# 颜色现算（不缓存成字段），避免多一个需要同步的状态
+	var r := Rect2(Vector2.ZERO, rect.size)
+	draw_rect(r, Config.item_color(item_id), true)
+	draw_rect(r, Color(0, 0, 0, 0.45), false, 1.5)
+
+
+# ── 编辑器：把 item_id 做成下拉 ─────────────────────────────────────
+##
+## 【为什么要动态生成属性】`@export_enum` 要求候选值是**编译期常量**，
+## 而我们的菜名来自 `data/menu.json`（运行时数据）。用 `_get_property_list`
+## 就能在检查器里生成一个下拉，**加新菜之后自动出现在列表里**。
+##
+## 【为什么脚本是 @tool】非 tool 脚本在编辑器里不执行代码，
+## `_get_property_list` 不会被调用，下拉也就不会出现。
+
+func _get_property_list() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	out.append({
+		"name": "item_id",
+		"type": TYPE_STRING,
+		"usage": PROPERTY_USAGE_DEFAULT,
+		"hint": PROPERTY_HINT_ENUM,
+		"hint_string": _item_hint_string(),
+	})
+	return out
+
+
+## 生成 `fries:薯条,burger:汉堡` 这样的 hint 串。
+##
+## 【为什么带中文名】`hint_string` 支持 `值:显示名` 的形式，下拉里就能
+## 直接看到「薯条」而不是记 id。空选项放最前面，表示"还没选"。
+func _item_hint_string() -> String:
+	var parts: Array[String] = ["（未设置）"]
+	for it in _menu_defs():
+		var id := String(it.get("id", ""))
+		if id == "":
+			continue
+		parts.append("%s:%s" % [id, String(it.get("name", id))])
+	return ",".join(parts)
+
+
+## 菜单定义（**直接读 data/menu.json，不依赖 Config autoload**）。
+##
+## 【为什么不直接用 Config.kitchen_items】`_get_property_list()` 在脚本
+## 被检查器解析时就会调用，那时 autoload 的 `_ready()` 可能**还没跑** ——
+## `Config.kitchen_items` 是空的，下拉就是空的（实测踩到过）。
+## 生成属性清单这件事应该**自给自足**，不该依赖另一个节点的初始化时机。
+##
+## 【为什么缓存】检查器刷新时 `_get_property_list()` 会被反复调用，
+## 每次读一遍文件没必要。菜单是静态数据，进程内读一次就够。
+static var _menu_cache: Array = []
+
+
+static func _menu_defs() -> Array:
+	if not _menu_cache.is_empty():
+		return _menu_cache
+	var f := FileAccess.open("res://data/menu.json", FileAccess.READ)
+	if f == null:
+		return _menu_cache
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return _menu_cache
+	var d: Dictionary = parsed
+	var out: Array = []
+	# 柜台卖的是"做好的餐点"，对应 menu.json 的 kitchen_items
+	# （饮品走饮料机那条线，以后要改再调整）
+	for key in ["kitchen_items", "drink_items"]:
+		var arr: Variant = d.get(key, [])
+		if typeof(arr) != TYPE_ARRAY:
+			continue
+		for it in arr:
+			if typeof(it) == TYPE_DICTIONARY and it.has("id"):
+				out.append(it)
+	_menu_cache = out
+	return _menu_cache

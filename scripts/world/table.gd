@@ -24,7 +24,33 @@ extends EntityBase
 
 const SEAT_SCRIPT := preload("res://scripts/world/seat.gd")
 
-var table_id: int = 0
+## ── 编辑器摆放用的导出量 ──
+##
+## 【椅子在哪】椅子不再是这里的偏移数组，而是 **Chair 子节点**
+## （见 scripts/world/chair.gd）。在这个 Table 下加 Chair 节点、拖到位置上，
+## 代码就会把它们读成座位。好处是摆位置所见即所得，而且普通椅子
+## 和卡座长凳可以各挂各的贴图。
+
+## 是否用代码画**占位美术**（餐桌矩形 + 椅子色块 + 状态脏点）。
+##
+## 【换成真贴图后必须关掉】否则占位色块会和你的贴图重叠、画面发脏。
+## 关掉只影响"画不画"，状态（干净/脏/有人）的数据与逻辑完全不受影响。
+@export var draw_placeholder: bool = true
+
+## 关掉它并手填 table_id，这张桌就不再参与自动编号（见 level.gd 的 _renumber_tables）。
+##
+## 【为什么要有这个开关】桌子的编号默认由位置自动决定 —— 复制粘贴桌子时最省事。
+## 但有时你想让某张桌固定叫「桌2」（比如测试断言、或关卡设计需要），
+## 那么关掉它、手填编号即可。自动编号只会分配**没被手工占用**的号，两者能混用。
+@export var auto_table_id: bool = true
+
+## 桌号。**正常运行由代码自动分配**（按位置从上到下、从左到右编号），所以不用管它。
+##
+## 【什么时候需要你手填】把上面的 `auto_table_id` 关掉，再在这里填一个号，
+## 这张桌就固定用这个号（自动编号会跳过已被占用的号）。
+## 这里也导出成 @export 就是为了让你能在检查器里直接填 ——
+## 否则「手动覆盖编号」这条路在编辑器里根本走不通。
+@export var table_id: int = 0
 var seats: Array = []            ## Array[Seat]
 var state: int = TableRules.State.CLEAN_EMPTY
 
@@ -50,18 +76,28 @@ var available_since: float = 0.0
 var _dirty_marks: Array[Vector2] = []
 
 
-func setup(p_id: int, p_rect: Rect2, p_seats: Array) -> void:
+func setup(p_id: int, p_rect: Rect2, p_seats: Array, p_build_seat_bodies: int = 0) -> void:
 	table_id = p_id
 	kind = Constants.Kind.TABLE
 	label = "桌%d" % p_id
 	display_label = label
 	position = p_rect.position
 
-	# 座位：layout.json 里的偏移是相对桌子左上角的
+	# 座位：p_seats 里的 pos 是相对桌子左上角的。
+	# `sit_pos` 可能带（椅子节点给的），不带就退回 pos（= 旧行为）。
 	seats.clear()
 	for s in p_seats:
-		var seat: Seat = SEAT_SCRIPT.new(s["pos"], s.get("size", Vector2(40, 30)), int(s.get("facing", 0)))
+		var seat: Seat = SEAT_SCRIPT.new(
+			s["pos"],
+			s.get("size", Vector2(40, 30)),
+			int(s.get("facing", 0)),
+			s.get("sit_pos", null))
 		seats.append(seat)
+
+	# 【清掉旧的座位碰撞体】这个函数会被重复调用（每开一局都重跑搭建流程），
+	# 而椅子碰撞体是下面 build_seat_bodies() 现建的 —— 不清就会一局叠一层，
+	# 寻路网格跟着多一层障碍，表现是「隔着老远就绕路」这种莫名其妙的路径。
+	_clear_body_shapes()
 
 	# 碰撞盒：桌面中部。
 	# 【为什么可以铺到接近满宽了】以前要留出 8% 给「坐在桌沿上的客人」，
@@ -73,11 +109,24 @@ func setup(p_id: int, p_rect: Rect2, p_seats: Array) -> void:
 	body_color = Constants.COLOR_TABLE_CLEAN
 	_make_dirty_marks()
 	mark_available()
-	_build_seat_bodies()
+	if p_build_seat_bodies > 0:
+		build_seat_bodies()
 
 
-## 给每个座位建一个静态碰撞体（椅子会挡路）
-func _build_seat_bodies() -> void:
+## 给每个座位建一个静态碰撞体（椅子会挡路）。
+##
+## 【为什么默认由「自动生成」路径显式打开，而编辑器路径关掉】
+## 两条路对「椅子碰撞盒归谁」的要求正好相反：
+##   - **编辑器摆放**（你手摆椅子）→ 椅子是独立的 `StaticBody2D`、自带碰撞盒，
+##     桌子**不该**再生成，否则两套叠一起（寻路网格那块被重复标记，
+##     表现是「隔着老远就绕路」，静默且难查）。
+##   - **自动生成**（`level.gd` 按 layout.json 造家具 —— 测试走这条）
+##     → 那时根本没有 Chair 节点，**必须**由桌子生成，
+##     否则「椅子挡路」这件事凭空消失、座位可达性跟着变。
+##
+## 【为什么是参数而不是两个函数】生成路径调的是同一个 `setup()`，
+## 用一个参数分流比复制一份 setup 安全得多（那套几何是修过 bug 的）。
+func build_seat_bodies() -> void:
 	for seat in seats:
 		var cs := CollisionShape2D.new()
 		var shape := RectangleShape2D.new()
@@ -85,6 +134,97 @@ func _build_seat_bodies() -> void:
 		cs.shape = shape
 		cs.position = seat.pos
 		add_child(cs)
+
+
+## 从 **Chair 子节点**读出座位，转成 setup() 要的字典数组。
+##
+## 【这是「椅子拆成节点」的落点】
+## 椅子现在是场景里的独立节点（见 scripts/world/chair.gd），它们的位置由你
+## 在编辑器里拖出来，而不是写一串偏移数字。这里把「节点位置」翻译成
+## setup() 认识的 `{pos, size, facing}`，于是下游（建碰撞盒 / 画椅子 /
+## 客人坐哪）**一行都不用改** —— 位置从哪来，和位置怎么用，被这条转换隔开了。
+##
+## 【两套坐标别混】椅子是 Table 的子节点，所以它的 `position` 已经是
+## **相对桌子原点**的局部坐标，正好就是 Seat.pos 要的形式，不用换算。
+## 而 `pos`（椅子中心）与 `sit_pos`（客人身体）分开传：
+## 前者管碰撞盒和椅子外观，后者管客人坐哪。
+func seats_from_chairs() -> Array:
+	var out: Array = []
+	for c in get_children():
+		if not (c is Chair):
+			continue
+		var chair := c as Chair
+		out.append({
+			"pos": seat_body_pos(chair),
+			"size": chair.size,
+			"facing": Chair.to_legacy_facing(chair.back),
+			"sit_pos": chair.position + chair.sit_offset_for_body(),
+		})
+	return out
+
+
+## 椅子的**碰撞盒中心**（相对桌子原点）。
+##
+## 【为什么要从「客人身体位置」反推椅子本体位置】
+## Chair 节点的原点是「客人身体中心」（这样摆位置最直观），
+## 而碰撞盒要盖住的是椅子本体 —— 也就是从身体位置往**椅背方向**退半个椅子。
+## Chair.chair_rect() 就是这个反推（它描述椅子相对原点的占位），取它的中心即可。
+func seat_body_pos(chair: Chair) -> Vector2:
+	return chair.position + chair.chair_rect().get_center()
+
+
+## 编辑器摆放后的自绑定。位置用节点自己的，椅子从子节点读。
+func setup_from_editor() -> void:
+	# 尺寸优先跟贴图走。必须在 setup() 之前 —— setup() 用 rect 算桌面碰撞盒
+	# 和脏点位置，晚了就会用旧的默认尺寸算一遍。
+	fit_rect_size_to_sprite()
+	if not auto_generate_shapes:
+		# 碰撞盒由你自己摆：只同步视觉矩形，不建桌面、也不建椅子碰撞体。
+		# 【注意这里**没有** _clear_body_shapes()】因为那会把你摆的也删掉。
+		rect = Rect2(Vector2.ZERO, rect_size)
+		_setup_table_data_only()
+		queue_redraw()
+	elif has_manual_shapes():
+		# 没关开关，但身上已经有碰撞盒了 → 当成「你已经摆了」，同样不重复生成。
+		# 这是防止「忘了关开关」导致两套碰撞盒叠在一起。
+		rect = Rect2(Vector2.ZERO, rect_size)
+		_setup_table_data_only()
+		queue_redraw()
+	else:
+		# 兜底：自动按比例生成（桌面 + 每把椅子各一个）
+		_clear_body_shapes()
+		setup(0 if auto_table_id else table_id,
+			Rect2(Vector2.ZERO, rect_size),
+			seats_from_chairs())
+	# 手工指定编号时，label 也要跟着自己的编号走
+	# （自动编号那条路由 level.gd 的 _renumber_tables 统一刷 label）
+	if not auto_table_id:
+		label = "桌%d" % table_id
+		display_label = label
+
+
+## 只建立「桌子作为座位容器」需要的数据，不碰碰撞形状。
+##
+## 【什么时候用】碰撞盒由你在编辑器里摆的时候。
+## 【为什么座位数据必须建】订单是**桌级共享**的，客人落座、上菜分配、
+## 结账都依赖 `seats` 数组。碰撞盒归你管，但座位数据归逻辑管 ——
+## 不建的话客人无处可坐，而且不报错。
+func _setup_table_data_only() -> void:
+	kind = Constants.Kind.TABLE
+	if label == "" or label == null:
+		label = "桌1"
+	display_label = label
+	seats.clear()
+	for s in seats_from_chairs():
+		var seat: Seat = SEAT_SCRIPT.new(
+			s["pos"],
+			s.get("size", Vector2(40, 30)),
+			int(s.get("facing", 0)),
+			s.get("sit_pos", null))
+		seats.append(seat)
+	body_color = Constants.COLOR_TABLE_CLEAN
+	_make_dirty_marks()
+	mark_available()
 
 
 func _make_dirty_marks() -> void:
@@ -481,23 +621,71 @@ func walk_to() -> Vector2:
 ## 两件事都源于判定盒比视觉桌面少了最上面 15px。
 ## 现在判定用完整桌面，寻路仍然用碰撞盒，各取所需。
 func touch_box() -> Rect2:
-	# position 就是 layout 里那张桌子的左上角，rect.size 是整张桌子的尺寸
-	return Rect2(position, rect.size)
+	# 【手摆碰撞盒时以你摆的为准】见 manual_touch_box 的说明：
+	# 碰撞盒是桌子的真实占位，rect_size 只是贴图范围，两者可以不一样。
+	var manual := manual_touch_box()
+	if manual.size.x > 0.0 and manual.size.y > 0.0:
+		return manual
+	# 【必须是 global_position，不能是 position】
+	# 原先写的是 Rect2(position, rect.size)。在「节点被 setup() 挪到 JSON 坐标」
+	# 的旧模型下两者数值恰好相等，所以一直是对的。但家具改成**编辑器摆放**以后，
+	# 节点位置由你自己拖，rect 只是「以节点原点为基准的尺寸」——
+	# 这时 position 是局部坐标，用它算出来的判定盒会**停在原位不动**：
+	# 桌子明明拖走了，判定盒还留在旧地方 → 点脏桌时服务员走过去却永远
+	# 判定不到「碰到了」，表现为**不报错的卡死**。
+	# global_position 是位置无关的写法，两种摆放方式都对。
+	# 注意：rect.size 是整张桌子的尺寸，而节点原点 = 桌子左上角。
+	return Rect2(global_position, rect.size)
+
+
+## 手动摆了碰撞盒时，「碰到桌子」的可碰区 = 你摆的那些形状的外接矩形。
+##
+## 【为什么要这样】`touch_box` 是「服务员身体碰到桌子了吗」的判据。
+## 碰撞盒由你摆时，它才是桌子的真实占位；而 `rect_size`（贴图尺寸）只是视觉范围。
+## 两者在门口那类家具上可以差很远，用贴图范围当判据会出现
+## 「离桌子老远就判定碰到了」。
+## 返回 size 为 0 表示「没手摆碰撞盒」，调用方会退回贴图范围。
+func manual_touch_box() -> Rect2:
+	if not has_manual_shapes():
+		return Rect2()
+	var box := _manual_shapes()
+	return Rect2(to_global(box.position), box.size)
 
 
 # ── 画 ─────────────────────────────────────────────────────────────
 
 func _draw() -> void:
-	# 先画椅子（在桌子下面一层，客人再画在椅子上）
-	for s in seats:
-		_draw_chair(s)
+	# 【编辑器里只画参考线】桌子是家具里几何最复杂的一件，所以参考线也最多：
+	#   蓝框 = 桌面碰撞盒（下部 75%，决定服务员能不能贴过来）
+	#   红框 = 每把椅子的碰撞盒（椅子会挡路）
+	#   红点 = 客人身体位置 / 黄箭头 = 客人面朝方向
+	# 这三样在编辑器里「看得见」很关键 —— 否则你摆完只能靠 F5 猜。
+	if Engine.is_editor_hint():
+		_draw_editor_chair_guides()
+		return
 
-	super._draw()
+	# 【占位美术的开关粒度】
+	#   桌子的 draw_placeholder → 控制桌面矩形 + 脏点 + 悬停高亮
+	#   每把 Chair 自己的 draw_placeholder → 只控制那一把椅子的色块
+	# 分开是有用的：你可以先把桌子换成真贴图、椅子还留着占位色块，
+	# 边换边看，不必两件一起换。
+	if draw_placeholder:
+		super._draw()
 
-	if state == TableRules.State.DIRTY:
-		for p in _dirty_marks:
-			draw_circle(p, 3.0, Color("3d3226"))
-			draw_circle(p + Vector2(4, 3), 2.0, Color("5a4a38"))
+		# 先画椅子（在桌子下面一层，客人再画在椅子上）
+		for s in seats:
+			if _chair_placeholder_on(s):
+				_draw_chair(s)
+
+		if state == TableRules.State.DIRTY:
+			for p in _dirty_marks:
+				draw_circle(p, 3.0, Color("3d3226"))
+				draw_circle(p + Vector2(4, 3), 2.0, Color("5a4a38"))
+	elif not seats.is_empty():
+		# 桌子已换真贴图、但椅子还没换 → 仍然画椅子色块
+		for s in seats:
+			if _chair_placeholder_on(s):
+				_draw_chair(s)
 
 	# 【桌角的小票标记已删除（玩家要求）】
 	# 原来在这里给「已开单」的桌子画一个米白色小方块，本意是
@@ -505,6 +693,23 @@ func _draw() -> void:
 	# 但一个空方块没有任何小票特征，玩家看到只会疑惑「这是什么」，
 	# 起不到提示作用反而成了噪音。已确认直接去掉。
 	# 「哪一桌有单」请以左侧订单票上的桌号为准。
+
+
+## 这个座位对应的椅子要不要画占位色块？
+##
+## 【为什么要查子节点，而不是在 Seat 上存一个布尔】占位开关属于**美术配置**，
+## 它天然属于场景里的 Chair 节点；Seat 是运行时数据，不该背这个字段。
+## 两边靠「椅子在桌子下的序号」对应 —— 这与 build_seat_bodies() 建碰撞盒时
+## 用的是同一个顺序，所以不会错位。
+func _chair_placeholder_on(seat: Seat) -> bool:
+	var idx := seats.find(seat)
+	var chairs: Array = []
+	for c in get_children():
+		if c is Chair:
+			chairs.append(c)
+	if idx < 0 or idx >= chairs.size():
+		return true
+	return bool((chairs[idx] as Chair).draw_placeholder)
 
 
 ## 椅子：座垫 + 靠背（靠背朝外，客人面朝桌子）
@@ -536,3 +741,35 @@ func _draw_chair(s: Seat) -> void:
 		var size := f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12)
 		draw_string(f, r.get_center() - Vector2(size.x * 0.5, -4.0), txt,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.45))
+
+
+## 编辑器参考线：桌面碰撞盒 + 每把椅子的碰撞盒与座位位置。
+##
+## 【为什么在编辑器里直接读 Chair 子节点，而不是读 seats 数组】
+## `seats` 是运行时数据，由 setup_from_editor() 填 —— 那一步在编辑器里**不会跑**。
+## 但参考线偏偏要在编辑器里就看得见，所以这里直接遍历子节点，
+## 用与运行时**同一套**几何函数（Chair.chair_rect / sit_offset_for_body）
+## 现算一遍。同一套函数是关键：参考线和实际碰撞盒不会走出两个样子。
+func _draw_editor_chair_guides() -> void:
+	var col := collision_box_local()
+	if col.size.x > 0.0 and col.size.y > 0.0:
+		_draw_gizmo_box(col, Color(0.25, 0.6, 1.0, 0.18), Color(0.35, 0.7, 1.0, 0.95))
+	for c in get_children():
+		if not (c is Chair):
+			continue
+		var ch := c as Chair
+		# 椅子的碰撞盒：Chair 的占位框平移到它在桌子里的位置
+		var chair_local := ch.chair_rect()
+		chair_local.position += ch.position
+		# 面朝方向 = 背离椅背
+		var back_dir := Vector2.ZERO
+		match ch.back:
+			Chair.Back.LEFT:
+				back_dir = Vector2(-1.0, 0.0)
+			Chair.Back.RIGHT:
+				back_dir = Vector2(1.0, 0.0)
+			Chair.Back.UP:
+				back_dir = Vector2(0.0, -1.0)
+			Chair.Back.DOWN:
+				back_dir = Vector2(0.0, 1.0)
+		_draw_gizmo_seat(ch.position + ch.sit_offset_for_body(), chair_local, back_dir)

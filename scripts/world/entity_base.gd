@@ -1,3 +1,4 @@
+@tool
 extends WorldObject
 class_name EntityBase
 ## 场景物件的通用实现：静态碰撞体、占位矩形、悬停高亮、标签。
@@ -9,6 +10,27 @@ class_name EntityBase
 ## 这也正是 ClickRouter 里那个 stuck_timeout 保底存在的原因。
 
 var rect: Rect2 = Rect2()
+## 视觉矩形的**尺寸**（以节点原点为基准）。节点原点一律 = 家具的**左上角**。
+##
+## 【为什么尺寸要单独导出，而位置不用】
+## 在旧的「按 data/layout.json 生成」模型里，rect 同时含位置和尺寸，两者都来自 JSON。
+## 家具改成**编辑器摆放**以后，位置由你在编辑器里拖，只有尺寸还是配置项 ——
+## 所以尺寸需要一个能被检查器序列化的字段（rect 是运行时拼出来的，编辑器改不了）。
+## 这也是「你摆位置、我管几何」这条分工在数据上的落点。
+@export var rect_size: Vector2 = Vector2(60, 60)
+
+## 是否让代码**自动生成**碰撞盒。
+##
+## 【关掉它 = 碰撞盒完全归你管】你在这个节点下自己加 `CollisionShape2D`
+## 子节点摆好，代码只负责**读**你摆的，不再生成也不再清理。
+##
+## 【为什么默认开启】它是**兜底**：你还没想好碰撞盒时也能跑起来，
+## 不至于摆完家具发现「走不过去也点不到」。想精确控制时关掉即可。
+##
+## 【双保险】即使你忘了关这个开关，只要身上已经有碰撞形状，
+## 代码也会当成「你已经摆了」而不重复生成 —— 避免两套碰撞盒叠在一起。
+## 那种叠加的表现是「寻路莫名其妙绕远」，非常难查。
+@export var auto_generate_shapes: bool = true
 var label: String = ""
 var body_color: Color = Color.WHITE
 var label_color: Color = Constants.COLOR_TEXT_DIM
@@ -34,6 +56,7 @@ func _ready() -> void:
 ## make_body = false 时不生成碰撞体（门口是纯装饰，不挡人）。
 func setup_shape(p_rect: Rect2, p_collision: Rect2 = Rect2(), make_body: bool = true) -> void:
 	rect = p_rect
+	rect_size = p_rect.size
 	if make_body and p_collision.size != Vector2.ZERO:
 		collision_layer = 1 << 0   # world
 		collision_mask = 1 << 1    # 挡住服务员（服务员在 layer 2）
@@ -44,6 +67,135 @@ func setup_shape(p_rect: Rect2, p_collision: Rect2 = Rect2(), make_body: bool = 
 		cs.position = p_collision.position + p_collision.size * 0.5
 		add_child(cs)
 	queue_redraw()
+
+
+# ── 编辑器摆放：自绑定 ─────────────────────────────────────────────
+##
+## 【这一节是「你摆、我绑」的落点】
+## 家具不再由 Level 按 layout.json 生成，而是你在编辑器里摆好、挂在 World 下。
+## 你摆出来的是**位置**（节点坐标）和**尺寸**（导出的 rect_size 等），
+## 而「碰撞盒怎么算、站位点在哪、座位在哪」这些几何推导仍由脚本负责 ——
+## 也就是这里。于是玩法逻辑完全不需要知道坐标是从 JSON 来的还是你拖出来的。
+
+## 由子类覆盖：碰撞盒在**局部坐标**里应该是什么。
+##
+## 【为什么碰撞盒不让编辑器直接摆，而要脚本算】
+## 碰撞盒和视觉矩形**故意不一样大**（桌子只盖下面 3/4、柜台只盖上面 72%，
+## 见各自的注释）。这个差值是被验证过的几何：它同时决定「座位可达性」
+## 「服务员不压桌面」「能站到柜台下缘取餐」。让编辑器直接摆碰撞盒，
+## 就等于把这批已验证行为暴露给手滑 —— 而它们是本工程被咬过最多的地方。
+## 所以：**尺寸跟着贴图自动走，碰撞盒按比例自动算**。要改比例再改脚本。
+func collision_box_local() -> Rect2:
+	return Rect2(Vector2.ZERO, rect_size)
+
+
+## 按贴图尺寸自动填 rect_size。返回是否成功。
+##
+## 【为什么不用你在检查器里手填】贴图的尺寸**代码本来就能读出来**
+## （AtlasTexture 的 Region 尺寸，或普通贴图的整图尺寸），
+## 让你把同一个数字再抄进 rect_size 是纯重复劳动 —— 而且两份数字一定会漂移：
+## 你换了贴图却忘了改 rect_size，表现就是「点击范围/碰撞盒和画面对不上」，
+## 极难排查（画面看着好好的，就是点不到、或者服务员走过去碰不着）。
+## 所以以**贴图为唯一真相来源**，每次自绑定都同步一次。
+##
+## 【什么时候会失败】还没加 Sprite2D、或它没设贴图。
+## 这时保留你在检查器里填的值，不覆盖 —— 免得把手工调好的尺寸清成 0。
+func fit_rect_size_to_sprite() -> bool:
+	for c in get_children():
+		if not (c is Sprite2D):
+			continue
+		var sp := c as Sprite2D
+		if sp.texture == null:
+			continue
+		# 【用 get_size 而不是 get_width/get_height】
+		# AtlasTexture.get_size() 返回的正是 Region 的尺寸；
+		# 普通 Texture2D 返回整图尺寸。两种都对，于是这里不用分支。
+		var s := sp.texture.get_size()
+		if s.x > 0.0 and s.y > 0.0:
+			rect_size = s
+			return true
+	return false
+
+
+## 编辑器摆放后的自绑定入口。Level 在 _build_world() 里对 World 的每个子节点调用。
+##
+## 【为什么叫这个名字】`EDITOR_SETUP` 常量在 level.gd 里，两处必须一致。
+## 拼错的后果是**静默**退回 JSON 生成（你摆的东西不生效、还不报错），
+## 所以名字集中在一个常量里。
+##
+## 【为什么先清掉已有碰撞盒】这个函数可能被调用多次（重开一局会重跑搭建流程）。
+## 不清就会越积越多：碰撞盒叠一层，寻路网格就多一层障碍，
+## 表现是「隔着老远就绕路」这种莫名其妙的路径问题。
+func setup_from_editor() -> void:
+	_apply_geometry()
+
+
+## 统一处理「几何来自哪」：你自己摆了碰撞盒就用你的，没摆才自动生成。
+##
+## 【为什么要支持手动摆碰撞盒】
+## 自动按比例算（桌子取下部 75% 之类）是**兜底**，不是**规定**：
+## 它让你「还没想好碰撞盒」时也能跑起来。但一旦你想要精确控制
+## （比如门只挡中间一截、柜台只挡台面），自动算就成了阻碍。
+## 所以：**你摆了就听你的，没摆就用兜底**——这个判据是全自动的，
+## 不需要你记得打开某个开关，也不会出现「忘了开开关所以没生效」。
+func _apply_geometry() -> void:
+	fit_rect_size_to_sprite()
+	if auto_generate_shapes and not has_manual_shapes():
+		_clear_body_shapes()
+		setup_shape(Rect2(Vector2.ZERO, rect_size), collision_box_local())
+		return
+	# 碰撞盒归你管：不清理、不重建 —— 只把视觉矩形的尺寸同步一下
+	# （点击范围 click_rect() 用 rect.size，所以它仍然跟着贴图走）。
+	rect = Rect2(Vector2.ZERO, rect_size)
+	queue_redraw()
+
+
+## 自己身上有没有**手动摆放**的碰撞形状？
+##
+## 【判据是「直接的碰撞形状子节点」】物理体可以挂任意多个碰撞形状，
+## 而且形状**必须**是直接子节点（Godot 的物理体只收集直属的 CollisionShape2D，
+## 不会往更深层找）。
+##
+## 【为什么要把 Chair 排除掉】桌子下面挂着 Chair（椅子现在是 StaticBody2D），
+## 那些 Chair 是**独立家具、有自己的碰撞盒**，不是桌子的一部分。
+## 不排除的话，桌子一看到「有个 PhysicsBody2D 子节点」就以为你已经摆了
+## 桌子的碰撞盒，于是不再生成 —— 桌面就完全不挡人了。
+func has_manual_shapes() -> bool:
+	for c in get_children():
+		if c is CollisionShape2D or c is CollisionPolygon2D:
+			return true
+	return false
+
+
+## 把你摆的碰撞形状读成一个矩形（**局部坐标**）。
+##
+## 【为什么要合并成一个矩形】`touch_box()` 只收一个矩形，用来算
+## 「服务员碰到它了没有」。多个形状时取**外接矩形**：对绝大多数家具
+## （一个碰撞盒）结果精确；对由多块拼成的家具，外接矩形偏保守
+## （判定范围略大），比"漏判导致点不动"安全得多。
+## 寻路那边不走这里 —— 它由 collision_shapes_global() 逐个形状取，保持精确。
+func _manual_shapes() -> Rect2:
+	var box := Rect2()
+	var first := true
+	for c in get_children():
+		if not (c is CollisionShape2D):
+			continue
+		var cs: CollisionShape2D = c
+		if not (cs.shape is RectangleShape2D):
+			continue
+		var r := cs.shape as RectangleShape2D
+		var local := Rect2(cs.position - r.size * 0.5, r.size)
+		box = local if first else box.merge(local)
+		first = false
+	return box if not first else Rect2(Vector2.ZERO, rect_size)
+
+
+## 删掉自己身上已有的碰撞体（子节点），避免重复调用时叠加。
+func _clear_body_shapes() -> void:
+	for c in get_children():
+		if c is CollisionShape2D:
+			remove_child(c)
+			c.queue_free()
 
 
 func click_rect() -> Rect2:
@@ -182,6 +334,12 @@ func set_tint(c: Color) -> void:
 
 
 func _draw() -> void:
+	# 【编辑器里不画占位色块】本脚本是 @tool，_draw() 在编辑器视口也会跑。
+	# 编辑器里只画「几何参考线」（见 _draw_gizmo），否则家具色块会盖在
+	# 你自己贴的 Sprite2D 上、看不清在摆什么。
+	if Engine.is_editor_hint():
+		_draw_editor_guides()
+		return
 	var r := Rect2(Vector2.ZERO, rect.size)
 	draw_rect(r, body_color * _tint, true)
 	draw_rect(r, Color(0, 0, 0, 0.45), false, 2.0)
@@ -189,6 +347,68 @@ func _draw() -> void:
 		draw_rect(r, Color(1, 1, 1, 0.5), false, 3.0)
 	if label != "":
 		_draw_label(label, r)
+
+
+# ── 编辑器可视化（@tool）────────────────────────────────────────────
+##
+## 【解决什么问题】`setup_from_editor()` 只在**运行时**跑，所以碰撞盒在编辑器里
+## 看不见 —— 你摆家具时完全不知道自己摆出来的东西「能不能走过去」「点不点得到」，
+## 只能每次按 F5 猜。这一节把那些几何直接画在编辑器视口里，做到所见即所得。
+##
+## 【颜色约定】
+##   蓝框 = 碰撞盒（会挡住服务员）        绿十字 = 站位点（服务员该站哪）
+##   黄框 = 点击范围（鼠标能点到的区域）  红圈   = 座位（客人坐哪）
+##   红箭头 = 客人面朝方向（背离椅背）    青色   = 站位点相对家具原点的偏移量
+##
+## 【为什么用 _draw 而不是画 gizmo】2D 节点没有 3D 那种 gizmo API；
+## 而 @tool + _draw 就能在编辑器视口渲染，且随节点变换自动跟随。
+
+## 编辑器里画几何参考线。
+func _draw_editor_guides() -> void:
+	var col := collision_box_local()
+	if col.size.x > 0.0 and col.size.y > 0.0:
+		_draw_gizmo_box(col, Color(0.25, 0.6, 1.0, 0.18), Color(0.35, 0.7, 1.0, 0.95))
+	# 点击范围（默认等于视觉矩形，门口有覆盖）
+	var cr := click_rect()
+	if cr.size.x > 0.0 and cr.size.y > 0.0:
+		_draw_gizmo_box(cr, Color(1.0, 0.9, 0.2, 0.06), Color(1.0, 0.9, 0.2, 0.7))
+
+
+## 画一个带边框的半透明矩形。
+func _draw_gizmo_box(r: Rect2, fill: Color, line: Color, width: float = 1.5) -> void:
+	draw_rect(r, fill, true)
+	draw_rect(r, line, false, width)
+
+
+## 画十字准星。
+func _draw_gizmo_cross(p: Vector2, col: Color, size: float = 7.0) -> void:
+	draw_line(p - Vector2(size, 0.0), p + Vector2(size, 0.0), col, 2.0)
+	draw_line(p - Vector2(0.0, size), p + Vector2(0.0, size), col, 2.0)
+
+
+## 画「站位点」参考：一个实心圆 + 从家具原点到它的连线。
+##
+## 【为什么连一条线】站位点存的是**相对家具原点的偏移**（`walk_offset`）。
+## 只画一个点的话，你把它拖远之后不好判断它是相对谁的；
+## 画一条连线，就能一眼看出「这个点是挂在这件家具上的、距离多少」。
+func _draw_gizmo_walk(offset: Vector2) -> void:
+	_draw_gizmo_cross(offset, Color(0.4, 1.0, 0.45, 0.95))
+	draw_arc(offset, 5.0, 0.0, TAU, 16, Color(0.4, 1.0, 0.45, 0.95), 1.5)
+	draw_line(Vector2.ZERO, offset, Color(0.4, 1.0, 0.45, 0.35), 1.0)
+
+
+## 画「座位」参考：椅子占位框 + 客人身体位置 + 面朝方向箭头。
+##
+## 【为什么要画三样而不是一个点】座位几何里「椅子本体」和「客人身体」
+## 是两个不同的位置（差半个靠背），而且客人还有朝向。
+## 只画一个点的话，你没法判断「客人会不会看起来浮在椅子前缘」。
+func _draw_gizmo_seat(body_pos: Vector2, chair_rect: Rect2, back_dir: Vector2) -> void:
+	_draw_gizmo_box(chair_rect, Color(1.0, 0.35, 0.35, 0.15), Color(1.0, 0.45, 0.45, 0.9))
+	draw_circle(body_pos, 4.0, Color(1.0, 0.4, 0.4, 0.95))
+	# 面朝方向 = 背离椅背的方向
+	if back_dir != Vector2.ZERO:
+		draw_line(body_pos, body_pos - back_dir * 14.0,
+			Color(1.0, 0.8, 0.3, 0.95), 2.0)
 
 
 ## 画家具标签。

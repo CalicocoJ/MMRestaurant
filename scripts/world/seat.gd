@@ -22,8 +22,17 @@ class_name Seat
 ## Table → Seat → Table 的循环引用（和当年 WorldObject ↔ ClickRouter 同一个坑）。
 ## 所以座位是可点击物件的**数据**，由 Table 统一负责画椅子和做碰撞盒。
 
-## 座位中心在桌子局部坐标里的位置
+## 椅子碰撞盒中心在桌子局部坐标里的位置。
+##
+## 【和 sit_pos 的分工 —— 这两个位置不一样大是故意的】
+##   pos     = 椅子**本体**在哪（碰撞盒中心）→ 决定「挡住服务员的那块」和椅子怎么画
+##   sit_pos = **客人身体**在哪              → 决定「客人坐在哪、服务员走到哪算贴近」
+## 3/4 视角下，人坐在椅面靠前的位置、靠背在身后，所以两者天然错开半个靠背。
+## 旧实现只有一个 pos，靠 `sit_offset()` 的 4px 偏移把两者联系起来；
+## 现在拆成两个字段，椅子换成真贴图后就能各自精确控制。
 var pos: Vector2 = Vector2.ZERO
+## 客人身体中心在桌子局部坐标里的位置（默认 = pos，即旧行为）。
+var sit_pos: Vector2 = Vector2.ZERO
 ## 椅子尺寸
 var size: Vector2 = Vector2(40, 30)
 ## 朝向：客人面朝桌子的方向（-1 = 朝右，+1 = 朝左，0 = 朝上/下）
@@ -37,10 +46,13 @@ var pending: Array[String] = []
 var got: Array[bool] = []
 
 
-func _init(p_pos: Vector2, p_size: Vector2 = Vector2(40, 30), p_facing: int = 0) -> void:
+## p_sit_pos 省略时取 pos（= 旧行为，所有既有调用点不受影响）。
+func _init(p_pos: Vector2, p_size: Vector2 = Vector2(40, 30),
+		p_facing: int = 0, p_sit_pos: Variant = null) -> void:
 	pos = p_pos
 	size = p_size
 	facing = p_facing
+	sit_pos = pos if p_sit_pos == null else Vector2(p_sit_pos)
 
 
 ## 座位上有没有人
@@ -112,5 +124,10 @@ func chair_rect() -> Rect2:
 ## 结果是服务员贴着椅子却永远接不了单 —— 表现为点了客人没反应。
 ## 让客人基本坐在椅子正中，只朝桌子微偏 4px（看起来仍在面向桌子），
 ## 外面就够得着了。
+##
+## 【现在这个值由 Chair 节点直接给出】不再在这里按 facing 现算 ——
+## 椅子换成真贴图后，「人该坐在椅子的哪个位置」是美术问题，
+## 不该写死在几何公式里。`sit_pos` 由 Chair 节点在摆好位置后填入。
+## 那 4px 的经验值搬到了 Chair.SIT_BIAS，仍然生效。
 func sit_offset() -> Vector2:
-	return pos + Vector2(float(-facing) * 4.0, 0.0)
+	return sit_pos
