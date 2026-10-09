@@ -90,16 +90,61 @@ func setup_from_editor() -> void:
 ## `World` 下、仍然会被 `ClickRouter` 遍历到 —— 于是**你看不到它，却能点到它**。
 ## 那种「点了空气却取到一份餐」的 bug 极难理解，所以隐藏时把点击范围也清空。
 func _apply_level_visibility() -> void:
-	var lv := 1
 	if Engine.is_editor_hint():
 		# 编辑器里不按关卡隐藏，否则你没法摆后面关卡才出现的食物
 		visible = true
 		queue_redraw()
 		return
-	lv = Game.level_index
-	var on := Config.item_available_at(item_id, lv) if item_id != "" else false
-	visible = on
+
+	# 【最要紧的一条：id 必须真实存在于菜单里】
+	# `item_id` 填错（拼错、大小写不对、或误填成下拉的显示文本 "burger:汉堡"）
+	# 的后果是**静默**的：这份餐取到手上之后，和订单里的 id 对不上，
+	# 于是**永远送不出去** —— 客人一直等到气走，而控制台一个字都不报。
+	# 所以这里主动校验并吼出来，让摆场景的人 F5 一眼就能看到。
+	if item_id == "":
+		visible = false
+		queue_redraw()
+		return
+	if not Config.has_item(item_id):
+		push_error("[柜台食物] %s 的 item_id=\"%s\" 不在菜单里 —— 这份餐将永远无法送出。%s"
+			% [name, item_id, _suggest_item_id()])
+		visible = false          # 摆一份取不出来的假食物没有意义
+		queue_redraw()
+		return
+
+	visible = Config.item_available_at(item_id, Game.level_index)
 	queue_redraw()
+
+
+## 猜一个"你大概想填什么"，附在错误信息里，省得去翻 menu.json。
+##
+## 常见成因是误把下拉的显示文本存了进来（`burger:汉堡` 而不是 `burger`），
+## 所以先按冒号切一刀，再看切出来的前半段是不是合法 id。
+func _suggest_item_id() -> String:
+	var trimmed := item_id.strip_edges()
+	if trimmed.contains(":"):
+		var head := trimmed.split(":")[0]
+		if Config.has_item(head):
+			return "应该是 \"%s\"（你填的是下拉的显示文本）。" % head
+	var best := ""
+	for it in Config.kitchen_items:
+		var id := String(it.get("id", ""))
+		# 子串命中就提示，比如填了 "burgerr"、"cheese" 也能给出方向
+		if best == "" and (id.begins_with(trimmed) or trimmed.begins_with(id)):
+			best = id
+	if best != "":
+		return "菜单里有 \"%s\"，是不是想填它？" % best
+	return "菜单里的 id 是：%s。" % ", ".join(_menu_ids())
+
+
+## 菜单里现有全部餐品的 id（拼成错误提示用）。
+func _menu_ids() -> Array[String]:
+	var out: Array[String] = []
+	for it in Config.kitchen_items:
+		out.append(String(it.get("id", "")))
+	for it in Config.drink_items:
+		out.append(String(it.get("id", "")))
+	return out
 
 
 ## 现在能不能点（ClickRouter 会调它）。

@@ -352,9 +352,15 @@ func _generate_missing_furniture() -> void:
 
 
 ## World 下有没有至少一件某种 kind 的家具？
+##
+## 【为什么不能写 int(child.get("kind"))】
+## `World` 下面未必每件东西都有 `kind`：装饰用的 `Node2D`、Marker 之类都没有。
+## 而在 Godot 里 `get("kind")` 对不存在的属性返回 **null**，`int(null)` 会直接
+## 抛 `Invalid call. Nonexistent 'int' constructor.` —— 每次遍历家具都刷一屏错误。
+## `kind` 本身是 int，直接 `==` 比较即可；null 不等于任何 int，自然跳过。
 func _has_kind(k: int) -> bool:
 	for child in world.get_children():
-		if int(child.get("kind")) == k:
+		if child.get("kind") == k:
 			return true
 	return false
 

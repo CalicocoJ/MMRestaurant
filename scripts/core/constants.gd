@@ -9,10 +9,17 @@ class_name Constants
 
 
 # ── 餐品 ID ────────────────────────────────────────────────────────
+## 【这些常量必须和 menu.json 里的 id 一致】
+## 不一致的后果是静默的：代码里用常量、"点单"用 menu.json 的 id，
+## 两边对不上就永远匹配不了（客人等到气走，控制台不报错）。
+## `tools/check_order_rule.gd` 会拿这里的值去核对 menu.json，别改坏它。
+##
+## 【当前菜单只有三道菜】见 data/menu.json 的 kitchen_items：
+##   cheesecake 芝士蛋糕 10 元 / burger 汉堡 15 元 / hotdog 热狗 12 元
+## 以后加菜记得同时在这里补常量（只给代码里真正要引用的菜加）。
+const CHEESECAKE := "cheesecake"
 const BURGER := "burger"
-const FRIES := "fries"
-const CHICKEN := "chicken"
-const COLA := "cola"
+const HOTDOG := "hotdog"
 
 
 # ── 客人状态 ───────────────────────────────────────────────────────
