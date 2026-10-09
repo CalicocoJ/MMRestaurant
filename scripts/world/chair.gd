@@ -46,8 +46,16 @@ enum Back { RIGHT = 0, LEFT = 1, UP = 2, DOWN = 3 }
 
 ## 是否用代码画占位美术（色块椅子 + 座位号）。
 ##
-## 换成真贴图后**必须关掉**，否则占位色块会和贴图重叠、画面发脏。
-@export var draw_placeholder: bool = true
+## 【默认 false：贴图优先】这条默认值是**刻意**选的。
+## 换成 `true` 的后果很隐蔽：色块会和你的椅子贴图**重叠叠画**，
+## 画面发脏，而且**编辑器里看不出来**（`_draw()` 在编辑器走参考线分支），
+## 只有 F5 之后才冒出来 —— 极易误判成"代码又生成了什么东西"。
+## 真的还没有贴图时，再手动勾上它。
+##
+## 【另外：挂了 Sprite2D 的节点会被自动关掉这个开关】见
+## `EntityBase.auto_disable_placeholder_if_sprite()` —— 免得你每加一把椅子
+## 都要记得来关一次。
+@export var draw_placeholder: bool = false
 
 ## 客人身体中心相对椅子原点的偏移，按椅背方向自动推开一点。
 ##

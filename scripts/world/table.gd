@@ -34,9 +34,12 @@ const SEAT_SCRIPT := preload("res://scripts/world/seat.gd")
 
 ## 是否用代码画**占位美术**（餐桌矩形 + 椅子色块 + 状态脏点）。
 ##
-## 【换成真贴图后必须关掉】否则占位色块会和你的贴图重叠、画面发脏。
+## 【默认 false：贴图优先】理由同 chair.gd 里的同名属性 ——
+## 默认 `true` 会让色块和贴图重叠，且**编辑器里看不出来**（`_draw()` 在编辑器
+## 走参考线分支），只有 F5 才暴露。还没有贴图时再手动勾上。
+##
 ## 关掉只影响"画不画"，状态（干净/脏/有人）的数据与逻辑完全不受影响。
-@export var draw_placeholder: bool = true
+@export var draw_placeholder: bool = false
 
 ## 关掉它并手填 table_id，这张桌就不再参与自动编号（见 level.gd 的 _renumber_tables）。
 ##

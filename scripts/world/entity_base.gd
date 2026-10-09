@@ -117,6 +117,36 @@ func fit_rect_size_to_sprite() -> bool:
 	return false
 
 
+## 有贴图就别再画占位色块：自动把 `draw_placeholder` 关掉。
+##
+## 【解决什么问题】`draw_placeholder` 默认开着时，代码画的色块会和你的
+## Sprite2D **重叠叠画**，画面发脏。而这个毛病**编辑器里看不出来** ——
+## `_draw()` 在编辑器走参考线分支，只有 F5 之后才暴露。
+## 于是很容易误判成「代码又生成了什么东西」。
+##
+## 【为什么自动而不是让你逐个关】椅子是每张桌两个、以后还会更多，
+## "记得关"这件事必然会被忘。让**贴图存在**这个事实本身决定开关，
+## 就不需要任何人记住任何事。
+##
+## 【为什么只认直接子节点的 Sprite2D】家具的贴图约定就是挂在节点自己下面一层
+## （见 README 的结构图）。更深层的可能是别人的装饰，不该由它来决定开关。
+func auto_disable_placeholder_if_sprite() -> void:
+	# 【怎么判断"这个节点有没有 draw_placeholder"】
+	# `get()` 对**不存在的属性**返回 null，而属性本身是 bool ——
+	# 所以 `typeof(v) != TYPE_BOOL` 就等价于"这家具没有占位开关"（比如 Door）。
+	# 不用 `"x" in self`：那种写法依赖 `in` 对 Object 的具体语义，不够直白。
+	var v: Variant = get("draw_placeholder")
+	if typeof(v) != TYPE_BOOL:
+		return
+	if not bool(v):
+		return                      # 已经是关的，不用管
+	for c in get_children():
+		if c is Sprite2D and (c as Sprite2D).texture != null:
+			set("draw_placeholder", false)
+			queue_redraw()
+			return
+
+
 ## 编辑器摆放后的自绑定入口。Level 在 _build_world() 里对 World 的每个子节点调用。
 ##
 ## 【为什么叫这个名字】`EDITOR_SETUP` 常量在 level.gd 里，两处必须一致。
@@ -127,6 +157,7 @@ func fit_rect_size_to_sprite() -> bool:
 ## 不清就会越积越多：碰撞盒叠一层，寻路网格就多一层障碍，
 ## 表现是「隔着老远就绕路」这种莫名其妙的路径问题。
 func setup_from_editor() -> void:
+	auto_disable_placeholder_if_sprite()
 	_apply_geometry()
 
 

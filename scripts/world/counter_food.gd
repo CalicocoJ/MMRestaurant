@@ -238,9 +238,11 @@ func _display_name() -> String:
 
 ## 占位美术：代码画的色块（还没有贴图时让你看得见东西），用菜单里的 color。
 ##
-## 【和桌椅的 draw_placeholder 保持一致的做法】贴图挂好之后把它关掉，
-## 否则色块会盖住贴图。
-@export var draw_placeholder: bool = true
+## 【默认 false：贴图优先】理由同 table.gd / chair.gd 的同名属性 ——
+## 默认开着会让色块盖在贴图上，而且编辑器里看不出来（`_draw()` 走参考线分支）。
+## 另外挂了 Sprite2D 的节点会被自动关掉，见
+## `EntityBase.auto_disable_placeholder_if_sprite()`。
+@export var draw_placeholder: bool = false
 
 
 func _draw() -> void:
