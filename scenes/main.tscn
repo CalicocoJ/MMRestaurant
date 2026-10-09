@@ -7,6 +7,7 @@
 [ext_resource type="Script" uid="uid://1yopnxe11q26" path="res://scripts/world/door.gd" id="5_o6xl0"]
 [ext_resource type="Script" uid="uid://dryw0dcrhjnuc" path="res://scripts/world/chair.gd" id="5_tipki"]
 [ext_resource type="Texture2D" uid="uid://daf737080nns0" path="res://assets/50sdiner_room_door_tiles3.png" id="6_tipki"]
+[ext_resource type="Script" uid="uid://bilpoag3ospuc" path="res://scripts/world/counter_food.gd" id="8_tipki"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_n1nnj"]
 atlas = ExtResource("4_tbgi4")
@@ -27,18 +28,30 @@ region = Rect2(7, 201, 24, 54)
 size = Vector2(22, 42)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_table"]
-size = Vector2(20.5, 35)
+size = Vector2(27.25, 47)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_hc7ip"]
 atlas = ExtResource("6_tipki")
 region = Rect2(273, 293, 62, 67)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_l3wnn"]
+atlas = ExtResource("4_tbgi4")
+region = Rect2(272, 431, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_2pqfb"]
+atlas = ExtResource("4_tbgi4")
+region = Rect2(240, 432, 16, 15)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ymiw2"]
+atlas = ExtResource("4_tbgi4")
+region = Rect2(273, 416, 15, 14)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_d5vy5"]
 atlas = ExtResource("4_tbgi4")
 region = Rect2(245, 260, 86, 120)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_hc7ip"]
-size = Vector2(92, 131)
+size = Vector2(100, 138.5)
 
 [node name="Level" type="Node2D" unique_id=891248357]
 script = ExtResource("1_level")
@@ -52,24 +65,28 @@ collision_enabled = false
 [node name="World" type="Node2D" parent="." unique_id=1863732896]
 
 [node name="Table1" type="StaticBody2D" parent="World" unique_id=2083022963]
+z_index = -10
 position = Vector2(137, 152)
 collision_mask = 2
 script = ExtResource("3_jyhfs")
-draw_placeholder = false
 auto_generate_shapes = false
 
 [node name="Sprite2D" type="Sprite2D" parent="World/Table1" unique_id=752278849]
+position = Vector2(-14, -29)
+scale = Vector2(1.3, 1.3)
 texture = SubResource("AtlasTexture_n1nnj")
+centered = false
 
 [node name="Chair1" type="StaticBody2D" parent="World/Table1" unique_id=559904902]
 z_index = -10
-position = Vector2(-25, 0)
+position = Vector2(-22, 0)
 collision_mask = 2
 script = ExtResource("5_tipki")
 
 [node name="Sprite2D" type="Sprite2D" parent="World/Table1/Chair1" unique_id=980962109]
-position = Vector2(52, -5)
+position = Vector2(42, -31)
 texture = SubResource("AtlasTexture_kquq6")
+centered = false
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="World/Table1/Chair1" unique_id=827863717]
 position = Vector2(52, 0)
@@ -78,12 +95,14 @@ debug_color = Color(7.70092e-06, 0.58591926, 0.7763248, 0.41960785)
 
 [node name="Chair2" type="StaticBody2D" parent="World/Table1" unique_id=352801588]
 z_index = -10
+position = Vector2(-4, 0)
 collision_mask = 2
 script = ExtResource("5_tipki")
 
 [node name="Sprite2D" type="Sprite2D" parent="World/Table1/Chair2" unique_id=892664975]
-position = Vector2(-27, -4)
+position = Vector2(-40, -30)
 texture = SubResource("AtlasTexture_5xiju")
+centered = false
 flip_h = true
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="World/Table1/Chair2" unique_id=1367421861]
@@ -91,11 +110,12 @@ position = Vector2(-27, 1)
 shape = SubResource("RectangleShape2D_n1nnj")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="World/Table1" unique_id=1843415338]
-position = Vector2(0, -5)
+position = Vector2(-1, -6)
 shape = SubResource("RectangleShape2D_table")
 
 [node name="Door" type="StaticBody2D" parent="World" unique_id=1200894138]
-position = Vector2(20, 1)
+z_index = -10
+position = Vector2(270, 2)
 collision_mask = 2
 script = ExtResource("5_o6xl0")
 walk_offset = Vector2(40, 100)
@@ -103,28 +123,33 @@ spawn_offset = Vector2(32, 31)
 auto_generate_shapes = false
 
 [node name="Sprite2D" type="Sprite2D" parent="World/Door" unique_id=1622796311]
-position = Vector2(40, 31)
+position = Vector2(6, -4)
 texture = SubResource("AtlasTexture_hc7ip")
+centered = false
 
 [node name="Table2" type="StaticBody2D" parent="World" unique_id=889888145]
+z_index = -10
 position = Vector2(264, 151)
 collision_mask = 2
 script = ExtResource("3_jyhfs")
-draw_placeholder = false
 auto_generate_shapes = false
 
 [node name="Sprite2D" type="Sprite2D" parent="World/Table2" unique_id=728311484]
+position = Vector2(-10, -26)
+scale = Vector2(1.3, 1.3)
 texture = SubResource("AtlasTexture_n1nnj")
+centered = false
 
 [node name="Chair1" type="StaticBody2D" parent="World/Table2" unique_id=1818665178]
 z_index = -10
-position = Vector2(-25, 0)
+position = Vector2(-19, 2)
 collision_mask = 2
 script = ExtResource("5_tipki")
 
 [node name="Sprite2D" type="Sprite2D" parent="World/Table2/Chair1" unique_id=1903499100]
-position = Vector2(52, -5)
+position = Vector2(41, -32)
 texture = SubResource("AtlasTexture_kquq6")
+centered = false
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="World/Table2/Chair1" unique_id=1234306352]
 position = Vector2(52, 0)
@@ -137,8 +162,9 @@ collision_mask = 2
 script = ExtResource("5_tipki")
 
 [node name="Sprite2D" type="Sprite2D" parent="World/Table2/Chair2" unique_id=1924154516]
-position = Vector2(-27, -4)
+position = Vector2(-39, -30)
 texture = SubResource("AtlasTexture_5xiju")
+centered = false
 flip_h = true
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="World/Table2/Chair2" unique_id=84181166]
@@ -146,21 +172,57 @@ position = Vector2(-27, 1)
 shape = SubResource("RectangleShape2D_n1nnj")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="World/Table2" unique_id=1203279700]
-position = Vector2(0, -5)
+position = Vector2(3.375, -2.5)
 shape = SubResource("RectangleShape2D_table")
 
+[node name="Food_Burger" type="StaticBody2D" parent="World" unique_id=1630778259]
+z_index = -10
+position = Vector2(498, 171)
+script = ExtResource("8_tipki")
+item_id = "burger:汉堡"
+
+[node name="Sprite2D" type="Sprite2D" parent="World/Food_Burger" unique_id=1302511456]
+scale = Vector2(1.3, 1.3)
+texture = SubResource("AtlasTexture_l3wnn")
+centered = false
+
+[node name="Food_Cake" type="StaticBody2D" parent="World" unique_id=38425775]
+z_index = -10
+position = Vector2(498, 146)
+script = ExtResource("8_tipki")
+item_id = "cheesecake:芝士蛋糕"
+
+[node name="Sprite2D" type="Sprite2D" parent="World/Food_Cake" unique_id=1761442300]
+scale = Vector2(1.3, 1.3)
+texture = SubResource("AtlasTexture_2pqfb")
+centered = false
+
+[node name="Food_Hotdog" type="StaticBody2D" parent="World" unique_id=222248413]
+z_index = -10
+position = Vector2(498, 197)
+script = ExtResource("8_tipki")
+item_id = "hotdog:热狗"
+
+[node name="Sprite2D" type="Sprite2D" parent="World/Food_Hotdog" unique_id=1303447046]
+scale = Vector2(1.3, 1.3)
+texture = SubResource("AtlasTexture_ymiw2")
+centered = false
+
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1397408436]
-position = Vector2(304, 164)
+position = Vector2(304, 161)
 zoom = Vector2(2.2, 2.2)
 
 [node name="Counter" type="StaticBody2D" parent="." unique_id=1752492156]
+z_index = -20
+y_sort_enabled = true
 collision_mask = 2
 
 [node name="Sprite2D" type="Sprite2D" parent="Counter" unique_id=2134285342]
-position = Vector2(548, 183)
-scale = Vector2(1.1, 1.1)
+position = Vector2(494, 119)
+scale = Vector2(1.2, 1.2)
 texture = SubResource("AtlasTexture_d5vy5")
+centered = false
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Counter" unique_id=234125690]
-position = Vector2(548, 183.5)
+position = Vector2(546, 190.75)
 shape = SubResource("RectangleShape2D_hc7ip")

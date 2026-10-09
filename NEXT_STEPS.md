@@ -21,8 +21,13 @@
 
 **两条摆家具的路径**（按 `World` 下有没有内容自动分流）：
 
-- **编辑器摆放** = 游戏正常运行（你摆的场景）
+- **编辑器摆放** = 游戏正常运行（你摆的场景）→ **只采纳，一件都不生成**
 - **自动生成** = 体检工具用（它们会设 `force_generated_layout = true`，切回 `layout.json`）
+
+> ⚠️ 编辑器摆放模式下代码**不再补任何家具**（2026-10-09 改的）。
+> 原来缺哪种就补哪种，结果凭空造出后厨台/饮料机/垃圾桶三个**落在房间外**的节点
+> （旧 1280×720 布局的坐标），不显示却会被遍历、被寻路当障碍。
+> 代价：以后只摆一半就跑起来，缺的不会自动补 —— 刻意的，场景由用户完全掌控。
 
 ---
 
@@ -36,14 +41,32 @@
 | **尺寸自动跟贴图**（`fit_rect_size_to_sprite`） | ✅ 不用手填 `rect_size` |
 | 桌子 / 椅子 / 门口 / 柜台食物 的自绑定入口 | ✅ |
 | **椅子拆成独立 `Chair`（`StaticBody2D`）** | ✅ 能自己拥有碰撞盒；座位仍在桌下 |
-| `counter_food.gd`（柜台可点食物，`item_id` 下拉） | ✅ 已建、已验证，**但食物节点还没摆** |
+| `counter_food.gd`（柜台可点食物，`item_id` 下拉） | ✅ 已建、已验证 |
+| **柜台上摆了 3 份食物**（`cheesecake` / `burger` / `hotdog`） | ✅ id 合法、可见、点击范围已对齐 |
+| **菜单改成只有 3 道菜**（芝士蛋糕 10 / 汉堡 15 / 热狗 12，无饮品） | ✅ 三道都标 `main:true`，「至少一份主食」自动满足 |
+| **家具占位色块全部关掉**（桌椅/食物/门） | ✅ 默认 `false` + 有贴图自动关 |
+| **门去掉写死的「门口」标签** | ✅ 改由场景决定 |
+| **编辑器摆放模式下不再生成任何家具** | ✅ 消除凭空多出的三个节点 |
+| **柜台食物点击范围对齐**（原来错位 498px） | ✅ 已修（节点位置 = 贴图位置，偏移归零） |
 | 门口点击默认关闭（`clickable = false`） | ✅ |
 | 相机 + 房间尺寸（视图 1280×720，房间约 464×336） | ✅ 你已调好 |
-| **文档** | ✅ `README.md` 已改写；**已提交 4 个 commit** |
+| **文档** | ✅ `README.md` 已改写（含占位美术/贴图对齐两节） |
 | MCP：npm 包 `@letsagents/godot-mcp` | ✅ 已装，`godot-mcp` 命令可用 |
 | MCP：Godot 插件 `addons/godot-mcp` | ✅ 已启用（`project.godot` 里有 `[editor_plugins]`） |
 
-### 上一轮刚修掉的回归
+### 这一轮修掉的真 bug（都是"静默失败"那类）
+
+| bug | 症状 |
+|---|---|
+| `@tool` 不继承 | 家具子类的 `_draw()` 在编辑器里根本不跑，参考线是死代码 |
+| `_has_kind()` 里 `int(null)` | 每次遍历家具刷一屏 `Nonexistent 'int' constructor` |
+| `item_id` 下拉存了显示名 | 变成 `"burger:汉堡"`，菜单里没有 → **上菜永远失败且不报错** |
+| `draw_placeholder` 默认 `true` | 椅子的占位色块盖住贴图，**编辑器里看不出来，只有 F5 暴露** |
+| 门把 `label` 写死成「门口」 | 关都关不掉 |
+| 服务员出生点读旧 `layout.json` | 坐标 (640,240) 在相机外 → **一开局卡在屏幕外** |
+| `Sprite2D` 偏移 498px 没归零 | **点食物图标没反应，点空地反而取餐** |
+
+### 上一轮修掉的回归
 
 `Table._build_seat_bodies()` 曾被改成空实现，导致**自动生成路径下椅子不挡人**。
 现已改为 `build_seat_bodies()`，由 `setup()` 的 `p_build_seat_bodies` 参数分流：
@@ -51,9 +74,64 @@
 
 ---
 
-## 三、**未完成的事（按优先级）**
+## 三、**下一步：给服务员做 4 方向行走动画**（2026-10-10 计划）
 
-### 1. MCP —— ✅ **已接通**（2026-10-09）
+### 已与用户确认的四个决定
+
+| 项 | 决定 |
+|---|---|
+| 动画方向 | **4 方向（上下左右）** |
+| 朝向规则 | **走动时按移动方向，停下保持最后朝向** |
+| 出生点 | **`Player` 节点的 `Position` 就是出生点**（删掉 `WaiterSpawn` 兜底） |
+| 拿菜显示 | **左肩/右肩各一个小图标** —— ⚠️ **这个功能已经存在**，见下 |
+
+### ⚠️ 先读这一条：「拿菜显示」不用重做
+
+`waiter.gd` 里**早就有**了（别再重复实现一遍）：
+
+```
+@export var carried_textures: Dictionary = {}   ← 填 餐品id → Texture2D 就换成真贴图
+func _draw_carried_markers()                     ← 左肩一个、右肩一个，对称等高
+func _draw_one_marker(centre, item_id)           ← 有贴图用贴图，没有用 ItemArt 兜底
+```
+
+用户报"看不到手上拿的菜"，**真正原因是取餐那条路断了**（点击偏移 498px），
+**不是缺显示功能**。那个 bug 已修。
+
+### 用户要在编辑器里做的
+
+```
+Level
+├── Actors            (Node2D)              ← 名字必须准确
+│   └── Waiter        (CharacterBody2D)     ← 名字必须准确，挂 scripts/actors/waiter.gd
+│       ├── AnimatedSprite2D                ← z_index 设 -1（见下）
+│       └── CollisionShape2D                ← 圆形，半径 16（= waiter.gd 的 RADIUS）
+└── …
+```
+
+| # | 约定 | 违反后果 |
+|---|---|---|
+| 1 | `Actors` / `Waiter` 名字必须准确 | `level.gd` 用 `get_node_or_null("Waiter")` 找它，找不到**代码又造一个** → 两个服务员 |
+| 2 | **不要**放进 `World` | `World` 是可点物件的扫描范围，服务员会被当家具 |
+| 3 | `Waiter.Position` 别留默认 `(0,0)` | 那是房间左上角，服务员卡墙角 |
+| 4 | `AnimatedSprite2D` 的 `z_index = -1` | **同一节点的 `_draw()` 画在所有子节点下面** → 贴图会盖住拿菜图标 |
+| 5 | `CollisionShape2D` 半径 = `16` | 和 `RADIUS` 不一致会卡门口/贴不住桌子 |
+
+### 代码侧要做的（还没开始）
+
+| # | 改动 | 说明 |
+|---|---|---|
+| 1 | **4 方向动画接口** | 按移动方向切动画，停下保持最后朝向。**全工程 `rotation`/`flip_h` 零匹配**，这套机制完全不存在 |
+| 2 | 动画命名约定 | `idle_down/walk_down`、`idle_up/walk_up`、`idle_left/walk_left`、`idle_right/walk_right`（**待用户确认美术帧能不能拆成这 8 个**） |
+| 3 | 左右是否同一套贴图 | **待用户确认**：是 → 只用 `walk_right` + `flip_h`；否 → 两套都做 |
+| 4 | 有 `AnimatedSprite2D` 时**不再画灰色圆** | 避免圆压在角色贴图上（影子可以先留着） |
+| 5 | 自动把 `AnimatedSprite2D` 的 `z_index` 设 `-1` | 保证拿菜图标可见（双重保险） |
+| 6 | 删掉 `WaiterSpawn` 那套兜底 | `Position` 就是出生点；**生成模式仍留旧兜底给测试** |
+| 7 | `facing` 状态 | 拿到菜时用它决定图标贴哪一侧 |
+
+---
+
+## 四、MCP（已接通，供参考）
 
 现在有 40 个 `mcp__godot__*` 工具可直接操作 Godot 编辑器：
 `play_scene` / `stop_scene` / `screenshot` / `get_scene_tree` / `inspect_node` /
@@ -78,6 +156,21 @@
 ```
 
 然后**重启 DSH**（MCP 工具在启动时连接，不热加载）。
+
+### 实测可用的工具（2026-10-09）
+
+| ✅ 可用 | ❌ 不可用（dsh-mcp-client 与插件不兼容） |
+|---|---|
+| `play_scene` / `stop_scene` / `get_play_status` | **`get_scene_tree`** —— 插件返回的字段比 schema 多，被严格校验拒掉 |
+| **`screenshot`**（看画面，很有用） | **`eval` / `await_condition`** —— 不带 `object_id` 时插件内部报 `self can't be used` |
+| **`get_diagnostics`**（静态检查，已抓到真 bug） | `inspect_node` / `set_node_property` / `call_node_method`（同样要 `object_id`，而拿不到） |
+| `get_runtime_errors` / `get_console_output` | |
+| **`simulate_input`**（模拟点击/按键，实测有效） | |
+| `list_assets` / `get_image_png` / `refresh_filesystem` | |
+
+**最关键的几个能用**：`screenshot` + `get_diagnostics` + `play_scene`/`simulate_input`
++ `get_runtime_errors`。**`get_diagnostics` 抓 `@tool` 缺失就是它的功劳。**
+缺 `get_scene_tree` 可以用 `tools/dump_runtime_tree.gd` 顶替。
 
 #### ⚠️ 踩过的两个坑（别再犯）
 
@@ -169,7 +262,7 @@ Level
 
 ---
 
-## 四、已知问题 / 坑
+## 五、已知问题 / 坑
 
 ### 测试套件
 
@@ -211,13 +304,24 @@ Level
 
 ---
 
-## 五、下一会话开场建议
+## 六、下一会话开场建议
 
-1. 先跑一次 `report_scene.gd` 看当前场景结构（确认上一轮的改动都在）
-2. 如果 MCP 已接上 → 用 `mcp__godot__*` 工具操作 Godot，不用再靠"改文件 + 重启"
-3. 如果没有 MCP → 继续按"你给我数据、我改代码；我改代码、你在编辑器操作"的分工
+1. **先看 `git log --oneline -13`**，今天（2026-10-09）那批提交的标题就是改动清单
+2. 跑 `res://tools/check_counter_food.gd` 确认柜台 3 份食物仍然合法 + 对齐
+3. 然后按「三、下一步」做服务员的 4 方向动画
+4. MCP 已接通，优先用 `mcp__godot__*`（`screenshot` / `get_diagnostics` /
+   `play_scene` / `simulate_input` / `get_runtime_errors` 实测都能用）；
+   `get_scene_tree` 挂了，用 `res://tools/dump_runtime_tree.gd` 顶替
 
-**协作边界（你明确要求过的）**：
-- **你**：`scenes/*.tscn`、`project.godot`、素材导入设置、编辑器里的任何操作
+**⚠️ 两件待用户确认的事（做动画前必须问清）**：
+
+1. 美术帧能不能拆成 `idle_down/walk_down`、`idle_up/walk_up`、
+   `idle_left/walk_left`、`idle_right/walk_right` 这 8 个动画名？
+2. 左右方向是同一套贴图（用 `flip_h`）还是两套？
+
+**协作边界（用户明确要求过的）**：
+- **用户**：`scenes/*.tscn`、`project.godot`、素材导入设置、编辑器里的任何操作
 - **我**：`scripts/**.gd`、`tools/**.gd` 代码文件
-- **改前先问**：数据文件（`data/*.json`）、以及**你 profile 里的 DSH 配置**
+- **改前先问**：数据文件（`data/*.json`）、以及**用户 profile 里的 DSH 配置**
+- 实测有效的分工：**要动场景时，让用户把 Godot 打开 → 我用 MCP 改 + 截图验证**
+  （比写文字让用户手改可靠，也比直接改 `.tscn` 安全 —— 后者有被编辑器覆盖的风险）

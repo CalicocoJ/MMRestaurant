@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://d0mxi4jxjciy3"]
+
+[ext_resource type="Script" uid="uid://bilpoag3ospuc" path="res://scripts/world/counter_food.gd" id="1_atitg"]
+
+[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_atitg"]
+load_path = "res://.godot/imported/50sdiner_set_withshadow.png-105d886d327d17ff845d0c31a940821c.ctex"
+
+[node name="Food_Template" type="StaticBody2D" unique_id=1366758419]
+z_index = -10
+script = ExtResource("1_atitg")
+draw_placeholder = false
+item_id = "burger:汉堡"
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=836681265]
+scale = Vector2(1.3, 1.3)
+texture = SubResource("CompressedTexture2D_atitg")
+centered = false
+region_enabled = true
+region_rect = Rect2(272, 431, 16, 15)
