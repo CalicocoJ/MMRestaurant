@@ -1,8 +1,13 @@
 extends SceneTree
-## 检查 counter_food.gd 能否正常工作：编译、下拉候选值、按关卡显示。
+## 检查编辑器摆放的柜台食物：item_id 是否合法、是否可见、位置是否和贴图对齐、
+## 以及「柜台上的菜」是否覆盖了「本关菜单池」。
 ##
 ## 用法：
 ##   godot --headless --path <project> --script res://tools/check_counter_food.gd
+##
+## 【本脚本故意不设 force_generated_layout】别的体检脚本都设它来隔离设计场景，
+## 而这里要检查的**正是**那批手工摆放的节点 —— 必须走
+## `_adopt_authored_furniture()` / `setup_from_editor()` 那条路。
 ##
 ## 【为什么用 root.get_node("Config") 而不是裸 Config】
 ## `--script` 模式下 autoload 节点**会被创建**（root 的子节点里有 Config/Game），
@@ -10,48 +15,81 @@ extends SceneTree
 ## （`Identifier not found: Config`）。所以从场景树里取。
 
 var _cfg: Node = null
+var _game: Node = null
 
 
 func _initialize() -> void:
 	_cfg = root.get_node_or_null("Config")
-	if _cfg == null:
-		print("✗ 拿不到 Config autoload")
+	_game = root.get_node_or_null("Game")
+	if _cfg == null or _game == null:
+		print("✗ 拿不到 Config / Game autoload")
 		quit(1)
 		return
 
-	var script: Variant = load("res://scripts/world/counter_food.gd")
-	if script == null:
-		print("✗ counter_food.gd 加载失败")
+	var scene: Variant = load("res://scenes/main.tscn")
+	if scene == null:
+		print("✗ main.tscn 加载失败")
 		quit(1)
 		return
-	print("✓ counter_food.gd 加载成功")
-
-	var node: Node = (script as GDScript).new()
-	if node == null:
-		print("✗ new() 失败")
-		quit(1)
-		return
-	print("✓ 实例化成功，节点类型 = %s" % node.get_class())
-
-	# 下拉候选值（_get_property_list 生成）
-	var props: Array = node.call("_get_property_list")
-	for p in props:
-		if String(p.get("name", "")) == "item_id":
-			print("✓ item_id 下拉候选 = %s" % String(p.get("hint_string", "")))
-
-	# 接口完整性（ClickRouter 需要这几个）
-	for m in ["hit_test", "accepts_click", "interact", "setup_from_editor", "collision_shapes_global"]:
-		var has_it: bool = node.has_method(m)
-		print("  %s %s()" % ["✓" if has_it else "✗", m])
-
-	# 碰撞盒必须是空的（不挡人）
-	var col: Rect2 = node.call("collision_box_local")
-	print("  碰撞盒 = %s  %s" % [str(col), "✓ 不挡人" if col.size == Vector2.ZERO else "✗ 会挡人！"])
-
-	# 各关卡的可用餐品（用来核对「柜台上要摆齐」）
-	for lv in range(1, 6):
-		var pool: Array = _cfg.call("pool_at", lv)
-		print("  第 %d 关菜单池（%d 样）: %s" % [lv, pool.size(), ", ".join(pool)])
-
-	node.free()
+	var level: Node = (scene as PackedScene).instantiate()
+	root.add_child(level)
+	# 等几帧，让 _ready() / setup_from_editor() 把状态定下来
+	for i in 3:
+		await process_frame
+	_report(level)
 	quit(0)
+
+
+func _report(level: Node) -> void:
+	var world: Node = level.get_node_or_null("World")
+	if world == null:
+		print("✗ 找不到 World")
+		return
+
+	print("\n=== 柜台食物逐份检查 ===")
+	var found := 0
+	var on_counter: Array[String] = []
+	for child in world.get_children():
+		if child.get("item_id") == null:
+			continue                      # 不是柜台食物
+		found += 1
+		var id := String(child.get("item_id"))
+		var legal: bool = _cfg.call("has_item", id)
+		var vis: bool = (child as Node2D).visible
+		print("\n[%s]" % child.name)
+		print("  item_id    = \"%s\"   %s" % [id, "✓ 菜单里有" if legal else "✗ 菜单里没有！"])
+		if legal:
+			print("  名称/价格  = %s / %d 元"
+				% [_cfg.call("item_name", id), _cfg.call("item_price", id)])
+			print("  本关可用   = %s   （start_level=%d，当前第 %d 关）"
+				% [str(_cfg.call("item_available_at", id, _game.get("level_index"))),
+					_cfg.call("item_start_level", id), _game.get("level_index")])
+			on_counter.append(id)
+		print("  运行时可见 = %s   %s"
+			% [str(vis), "✓" if vis else "✗ 会被隐藏（id 非法或本关未解锁）"])
+
+		# 位置对齐：节点原点应当和贴图左上角重合，否则点击范围和看到的差一截
+		var sp: Node = child.get_node_or_null("Sprite2D")
+		if sp is Sprite2D:
+			var off: Vector2 = (sp as Sprite2D).position
+			print("  贴图偏移   = %s   %s" % [str(off),
+				"✓ 已对齐" if off == Vector2.ZERO
+				else "✗ 未归零 → 点击范围和贴图错位 %s" % str(off)])
+
+	print("\n共找到 %d 份柜台食物。" % found)
+
+	# 菜单池 vs 柜台：少摆一样，点到它的那桌就永远上不了菜（且不报错）
+	var lv: int = _game.get("level_index")
+	var pool: Array = _cfg.call("pool_at", lv)
+	print("\n=== 菜单池 vs 柜台（第 %d 关）===" % lv)
+	print("  本关客人可能点：%s" % ", ".join(pool))
+	print("  柜台上确实有：  %s" % ", ".join(on_counter))
+	var missing: Array[String] = []
+	for id in pool:
+		if not on_counter.has(String(id)):
+			missing.append(String(id))
+	if missing.is_empty():
+		print("  ✓ 齐全")
+	else:
+		print("  ✗ 缺 %d 样：%s" % [missing.size(), ", ".join(missing)])
+		print("    后果：点到这些菜的桌子永远上不了菜（客人等到气走，且不报错）")

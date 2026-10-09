@@ -96,6 +96,12 @@ func _apply_level_visibility() -> void:
 		queue_redraw()
 		return
 
+	# 【先从旧值自愈，再校验】
+	# 早期版本的 `item_id` 下拉把显示文本整段存了进来（`"burger:汉堡"`），
+	# 原因见 _item_hint_string 的说明。这里自动取冒号前的部分，
+	# 让已经摆好的节点不用手工返工。
+	_heal_item_id()
+
 	# 【最要紧的一条：id 必须真实存在于菜单里】
 	# `item_id` 填错（拼错、大小写不对、或误填成下拉的显示文本 "burger:汉堡"）
 	# 的后果是**静默**的：这份餐取到手上之后，和订单里的 id 对不上，
@@ -114,6 +120,30 @@ func _apply_level_visibility() -> void:
 
 	visible = Config.item_available_at(item_id, Game.level_index)
 	queue_redraw()
+
+
+## 把「值:显示名」这种旧格式还原成纯 id（`"burger:汉堡"` → `"burger"`）。
+##
+## 【为什么要自愈而不是只报错】旧场景文件里存的是这种值，那些节点已经摆好了。
+## 只报错的话，每份食物都要人去逐个返工；自愈则让它们**直接可用**，
+## 同时打一条 warning 说明发生了什么 —— 既不留坑，也不制造返工。
+##
+## 【为什么只写回一次】`_apply_level_visibility()` 会被多次调用
+## （`setup_from_editor()` 一次、`_ready()` 一次）。用静态标记避免刷屏。
+static var _healed_reported: bool = false
+
+func _heal_item_id() -> void:
+	var v := item_id.strip_edges()
+	if not v.contains(":"):
+		return
+	var head := v.split(":")[0].strip_edges()
+	if not Config.has_item(head):
+		return                  # 不是这个毛病，交给下面的校验去报错
+	item_id = head
+	if not _healed_reported:
+		_healed_reported = true
+		push_warning("[柜台食物] 检测到旧格式的 item_id（带显示名），已自动改为纯 id。"
+			+ "请到场景里确认 %s 的值现在是 \"%s\"。" % [name, head])
 
 
 ## 猜一个"你大概想填什么"，附在错误信息里，省得去翻 menu.json。
@@ -249,17 +279,22 @@ func _get_property_list() -> Array[Dictionary]:
 	return out
 
 
-## 生成 `fries:薯条,burger:汉堡` 这样的 hint 串。
+## 生成下拉候选：**只有 id，逗号分隔**。
 ##
-## 【为什么带中文名】`hint_string` 支持 `值:显示名` 的形式，下拉里就能
-## 直接看到「薯条」而不是记 id。空选项放最前面，表示"还没选"。
+## 【为什么不能写成 `burger:汉堡`】那种 `值:显示名` 的写法是给
+## **`PROPERTY_HINT_ENUM` + 整数属性**用的。我们的属性是 `TYPE_STRING`，
+## 类型和 hint 不匹配时 Godot 会把**整段显示文本**当成值存下来 ——
+## 于是场景里出现 `item_id = "burger:汉堡"`，而它在菜单里根本不存在，
+## 这份餐就永远送不出去了（还会连带触发下面的校验报错）。
+##
+## 【为什么空选项写成 `none` 而不是 `（未设置）`】同理：显示什么就存什么。
+## 用一个明确的哨兵值，语义清楚，也不会因为中文括号出意外。
 func _item_hint_string() -> String:
-	var parts: Array[String] = ["（未设置）"]
+	var parts: Array[String] = ["none"]
 	for it in _menu_defs():
 		var id := String(it.get("id", ""))
-		if id == "":
-			continue
-		parts.append("%s:%s" % [id, String(it.get("name", id))])
+		if id != "":
+			parts.append(id)
 	return ",".join(parts)
 
 
