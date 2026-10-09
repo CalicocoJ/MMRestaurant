@@ -78,7 +78,25 @@ func _report(level: Node) -> void:
 
 	print("\n共找到 %d 份柜台食物。" % found)
 
-	# 菜单池 vs 柜台：少摆一样，点到它的那桌就永远上不了菜（且不报错）
+	# ── World 下有什么：确认代码没有再偷偷生成家具 ──────────────────
+	# 设计场景模式下，代码**一件都不该生成**（后厨台/饮料机/垃圾桶会凭空
+	# 多出三个落在房间外的节点，不显示却会被遍历、被寻路当障碍）。
+	print("\n=== World 下的子节点（编辑器摆放 + 代码生成）===")
+	# 【显式标注类型，不能用 :=】本项目开了「警告当错误」，
+	# 而 `child.get("kind")` 的静态类型是 Variant —— 用 := 会因为
+	# "type is being inferred from a Variant value" 直接解析失败。
+	var kinds: Dictionary = {}
+	for child in world.get_children():
+		var k: Variant = child.get("kind")
+		var kn: String = "（无 kind，装饰物）" if k == null else str(k)
+		var scr: Variant = child.get_script()
+		var rn: String = "（无脚本）" if scr == null else String((scr as Script).resource_path).get_file()
+		print("  %-16s kind=%-14s 脚本=%s" % [child.name, kn, rn])
+		if k != null:
+			kinds[kn] = int(kinds.get(kn, 0)) + 1
+	print("  各 kind 数量：%s" % str(kinds))
+
+	# ── 菜单池 vs 柜台：少摆一样，点到它的那桌就永远上不了菜（且不报错）──
 	var lv: int = _game.get("level_index")
 	var pool: Array = _cfg.call("pool_at", lv)
 	print("\n=== 菜单池 vs 柜台（第 %d 关）===" % lv)
