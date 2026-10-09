@@ -22,12 +22,17 @@ Game="*res://scripts/core/game_state.gd"
 Stickers="*res://scripts/ui/stickers.gd"
 UI="*res://scripts/ui/ui_manager.gd"
 DebugTrace="*res://scripts/core/debug_trace.gd"
+McpRuntime="*res://addons/godot-mcp/mcp_runtime.gd"
 
 [display]
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godot-mcp/plugin.cfg")
 
 [gui]
 

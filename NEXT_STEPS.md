@@ -53,25 +53,65 @@
 
 ## 三、**未完成的事（按优先级）**
 
-### 1. 接 MCP（进行中，差最后两步）
+### 1. MCP —— ✅ **已接通**（2026-10-09）
 
-- ✅ `npm i -g @letsagents/godot-mcp` 已装
-- ✅ Godot 插件已勾选、`6510` 端口**实测可连**
-- ⏳ **待做**：把这一项追加到 `C:\Users\Wjj\.dsh\profiles\web\cordis.patch.yml`：
+现在有 40 个 `mcp__godot__*` 工具可直接操作 Godot 编辑器：
+`play_scene` / `stop_scene` / `screenshot` / `get_scene_tree` / `inspect_node` /
+`set_node_property` / `call_node_method` / `eval` / `simulate_input` /
+`get_runtime_errors` / `get_console_output` / `get_diagnostics` / `list_assets` /
+`refresh_filesystem` / `reload_scene` / 断点调试全家桶 …
+
+**装法（三件事，缺一不可）**：
+
+1. `npm i -g @letsagents/godot-mcp`（提供 `godot-mcp` 这个 stdio server）
+2. Godot 里 **项目设置 → 插件 → 勾 `Godot MCP Bridge`**（它监听 TCP **6510**）
+3. `C:\Users\Wjj\.dsh\profiles\web\cordis.patch.yml` 里**用 `insert` 新增**一项：
 
 ```yaml
-- id: mcp-godot
-  name: '@deepseek-ai/dsh-mcp-client'
-  config:
-    serverName: godot
-    transport: stdio
-    command: godot-mcp
+- insert:
+    - id: mcp-godot
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: godot
+        transport: stdio
+        command: godot-mcp
 ```
 
-- ⏳ **待做**：**重启 DSH**（MCP 工具不热加载）。之后工具名会是 `mcp__godot__<工具名>`
+然后**重启 DSH**（MCP 工具在启动时连接，不热加载）。
 
-> ⚠️ 沙箱限制：`Get-Process` / `Get-NetTCPConnection` 看不到你的进程和监听端口，
-> **但 TCP 连接（127.0.0.1:6510）是通的**。以后排查别依赖前两个命令。
+#### ⚠️ 踩过的两个坑（别再犯）
+
+**坑 1：`cordis.patch.yml` 的语法 ≠ 条目数组。**
+
+那个文件是「**patch 列表**」，每个条目的含义是：
+
+| 写法 | 含义 |
+|---|---|
+| `insert: [rows]` | **新增** rows ← **加插件必须用这个** |
+| 只有 `id` 不带 `insert` | **修改**已存在的那个 id（`config` 是**整体替换**，不深合并） |
+| 指向不存在的 id | **只警告并跳过** |
+
+我第一版直接写了 `- id: mcp-godot` + `name`，结果启动时报：
+
+```
+dsh: [...cordis.patch.yml] patch: entry "mcp-godot" not found
+```
+
+**而且它是被静默跳过的——DSH 照常起来，只是插件完全没生效**，所以很容易误判成"环境/沙箱问题"。
+
+**诊断命令**（权威判据，改完配置先跑它）：
+
+```powershell
+npx @deepseek-ai/dsh --profile web --dump-config
+# 看有没有 "patch: ... not found" 警告；没有警告且能搜到 mcp-godot 才算对
+```
+
+**坑 2：`Get-Process` / `Get-NetTCPConnection` 在这个沙箱里看不到宿主进程和监听端口**，
+但 **TCP 连接（如 `127.0.0.1:6510`）是通的**。排查别依赖前两个命令，直接用 TCP 连接测。
+
+**另外**：MCP over stdio 要求 harness 能 spawn 子进程并接管其管道。
+我实测**受沙箱限制的命令 `spawnSync` 会返回 EPERM**——但 harness 自身显然不受此限制
+（否则这些工具不会出现）。所以这条限制只影响**我**发起的命令，不影响 MCP。
 
 ### 2. 摆柜台 + 食物（`counter_food.gd` 已就绪）
 
