@@ -508,19 +508,85 @@ func _parse_seats(raw: Variant) -> Array:
 
 
 func _build_actors() -> void:
-	actors = Node2D.new()
-	actors.name = "Actors"
-	add_child(actors)
+	# 【复用而不是无脑新建】这三个容器/节点原本全是代码运行时造的。
+	# 但「家具改由编辑器摆放」之后，你有可能也想在编辑器里直接放 Actors/Waiter ——
+	# 那时 add_child 一个同名节点会造成**重复**（两个 Waiter，一个在跑、一个在那儿）。
+	# 所以先找已有的，找不到再建。
+	actors = _ensure_node2d("Actors", self)
+	customers = _ensure_node2d("Customers", actors)
 
-	customers = Node2D.new()
-	customers.name = "Customers"
-	actors.add_child(customers)
+	waiter = _ensure_waiter()
 
-	waiter = CharacterBody2D.new()
-	waiter.set_script(WAITER_SCRIPT)
-	waiter.name = "Waiter"
-	waiter.position = EntityBase.point_from_array(Config.layout.get("waiter_spawn", []), Vector2(560, 500))
-	actors.add_child(waiter)
+
+## 拿到指定名字的 Node2D 子节点；没有就新建一个。
+func _ensure_node2d(node_name: String, parent: Node) -> Node2D:
+	var existing := parent.get_node_or_null(node_name)
+	if existing is Node2D:
+		return existing as Node2D
+	var made := Node2D.new()
+	made.name = node_name
+	parent.add_child(made)
+	return made
+
+
+## 服务员：复用 Actors 下已有的，没有才新建。
+func _ensure_waiter() -> Node:
+	var existing := actors.get_node_or_null("Waiter")
+	if existing is CharacterBody2D:
+		return existing
+	var made := CharacterBody2D.new()
+	made.set_script(WAITER_SCRIPT)
+	made.name = "Waiter"
+	made.position = _waiter_spawn_point()
+	actors.add_child(made)
+	return made
+
+
+## 从编辑器摆好的出生点取坐标（**仅编辑器摆放模式**）。
+##
+## 【为什么要这个】出生点原先写死读 `layout.json` 的 `waiter_spawn`（= 640,240），
+## 那是**旧 1280×720 布局的中心**。你把场景缩成左上角一小块之后，
+## 那个坐标落在相机视野之外 —— 表现是「一开局服务员就卡在屏幕外」，而且不报错。
+##
+## 【怎么摆】在 Level 下加一个 Node2D，命名 `WaiterSpawn`，拖到你要的位置。
+## 生成模式（工具/测试）找不到它时自动退回 JSON 坐标，行为完全不变。
+func _authored_waiter_spawn() -> Variant:
+	var probe := get_node_or_null("WaiterSpawn")
+	if probe is Node2D:
+		return (probe as Node2D).global_position
+	return null
+
+
+## 本局服务员该站在哪。三级优先：
+##
+##   1. **`WaiterSpawn` 节点**（你在编辑器里摆的 Node2D）—— 最可控，推荐
+##   2. **相机视野中心** —— 保证「一定看得见」，不用你摆任何东西
+##   3. `layout.json` 的 `waiter_spawn` —— 生成模式（工具/测试）的旧行为
+##
+## 【为什么需要 2 这个兜底】出生点原来是写死的 `layout.json` 坐标（640,240），
+## 属于旧 1280×720 布局。你把场景缩到左上角一小块之后它就落到相机外了 ——
+## 表现是「一开局服务员卡在屏幕外」，且**不报错**。
+## 用相机视野中心兜底之后，**哪怕你什么都不摆，服务员也一定在画面里**。
+func _waiter_spawn_point() -> Vector2:
+	var authored: Variant = _authored_waiter_spawn()
+	if authored != null:
+		return authored
+	var cam_center: Variant = _camera_view_center()
+	if cam_center != null:
+		return cam_center
+	return EntityBase.point_from_array(
+		Config.layout.get("waiter_spawn", []), Vector2(560, 500))
+
+
+## 当前相机看到的区域中心（世界坐标）；没有相机时返回 null。
+func _camera_view_center() -> Variant:
+	var vp := get_viewport()
+	if vp == null:
+		return null
+	var cam := vp.get_camera_2d()
+	if cam == null:
+		return null
+	return cam.global_position
 
 
 func _build_systems() -> void:
@@ -618,8 +684,7 @@ func _start_level_run() -> void:
 		# 而且那张桌子会一直挂着「正在收拾」的登记 —— 永久不可坐。
 		if waiter.has_method("cancel_command"):
 			waiter.call("cancel_command", "")
-		waiter.global_position = EntityBase.point_from_array(
-			Config.layout.get("waiter_spawn", []), Vector2(560, 500))
+		waiter.global_position = _waiter_spawn_point()
 	# 兜底：把「正在收拾」登记表整个清掉。任何一处漏了解除都会让那张桌
 	# 永久不可坐（不报错），而开局时本来就不可能有桌子在处理中。
 	TableRules.clear_all_cleaning()
