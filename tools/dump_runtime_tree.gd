@@ -33,6 +33,20 @@ func _initialize() -> void:
 				if sub is Node2D and sub.get("draw_placeholder") != null:
 					_check_placeholder(sub, "    ", [bad])
 	print("  有贴图却仍开着占位色块的节点数：%d" % bad)
+
+	# ── 门的标签检查 ────────────────────────────────────────────────
+	# 「门口」二字原来是 setup()/setup_from_editor() 写死的，关都关不掉。
+	# 现在改成由场景决定（label 空就不画），这里报一下实际值。
+	if world != null:
+		var d := world.get_node_or_null("Door")
+		if d != null:
+			print("\n=== 门 ===")
+			print("  label          = \"%s\"" % String(d.get("label")))
+			print("  display_label  = \"%s\"" % String(d.get("display_label")))
+			print("  draw_placeholder = %s" % str(d.get("draw_placeholder")))
+			print("  → %s" % ("不会再画色块，也不会写「门口」二字 ✓"
+				if not bool(d.get("draw_placeholder")) and String(d.get("label")) == ""
+				else "仍会画出东西，检查 label / draw_placeholder"))
 	quit(0)
 
 
@@ -65,7 +79,11 @@ func _walk(node: Node, depth: int) -> void:
 		extra += "  script=%s" % String((scr as Script).resource_path).get_file()
 	if node is Node2D:
 		extra += "  pos=%s" % str((node as Node2D).position)
-	if not node.visible:
+	# 【必须先判类型再用 .visible】`visible` 是 CanvasItem 的属性，
+	# 而 Pathfinder / ClickRouter 是普通 `Node`（不可见也不可绘制）——
+	# 对它们读 `.visible` 会抛 "Invalid access to property or key 'visible'"
+	# 刷一屏假错误，掩盖真正的报错。
+	if node is CanvasItem and not (node as CanvasItem).visible:
 		extra += "  [隐藏]"
 	print("%s%s (%s)%s" % [indent, node.name, node.get_class(), extra])
 	for child in node.get_children():
