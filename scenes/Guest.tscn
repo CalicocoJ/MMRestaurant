@@ -1,0 +1,11 @@
+[gd_scene format=4 uid="uid://bgu0est00001"]
+
+[ext_resource type="Script" uid="uid://bvlo7nxqge0u8" path="res://scripts/actors/guest.gd" id="1_guest"]
+
+[node name="Guest" type="Area2D"]
+script = ExtResource("1_guest")
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+sprite_frames = null
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]

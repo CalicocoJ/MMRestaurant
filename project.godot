@@ -22,6 +22,7 @@ Game="*res://scripts/core/game_state.gd"
 Stickers="*res://scripts/ui/stickers.gd"
 UI="*res://scripts/ui/ui_manager.gd"
 DebugTrace="*res://scripts/core/debug_trace.gd"
+McpRuntime="*res://addons/godot-mcp/mcp_runtime.gd"
 
 [display]
 

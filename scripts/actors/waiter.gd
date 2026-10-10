@@ -42,9 +42,21 @@ const ARRIVE_EPS := 6.0
 ## 见 `_next_step()` 里关于「吸附会把连点变成左右横跳」的说明。
 const SNAP_EPS := 1.5
 
-## 走路速度（px/s）。实际值在 `_ready()` 里从 config.json 的 waiter_speed 读，
-## 这里只是「配置读不到」时的兜底默认。两处要一起改，否则配置缺失时会悄悄变慢。
-var speed: float = 290.0
+## 走路速度（px/s）。**可以直接在检查器里调**。
+##
+## 【两种来源，检查器优先】
+##   检查器里留 `0`  → 用 `data/config.json` 的 `waiter_speed`（默认 290）
+##   检查器里填正数  → 以检查器为准，**config.json 那份被忽略**
+## 于是「只调数值不碰代码」这条既有约定不变（改 config.json 仍然生效），
+## 同时你选中 `Waiter` 节点就能在检查器里试手感，不用重启、不用改 JSON。
+##
+## 【为什么用 0 当哨兵，而不是默认就填 290】填死 290 的话，改 config.json
+## 就再也不会生效了 —— 而那边才是「数值的唯一出处」这个约定的落点。
+## 0 是安全的哨兵：速度不可能为 0（那样服务员永远走不到目的地）。
+##
+## ⚠️ 这个值在 `_ready()` 里被解析一次；**想在运行中改**得用
+## `waiter.speed = xxx`（比如调试时热改），改检查器只对**下一次 F5** 生效。
+@export var speed: float = 0.0
 var stuck_timeout: float = 2.0
 
 ## 当前指令
@@ -135,16 +147,247 @@ var carried: Array[String] = []
 
 
 func _ready() -> void:
-	speed = Config.num("waiter_speed")
+	# 检查器里填了正数就以检查器为准；留 0 才回落到 config.json。
+	# （0 是哨兵值，见 speed 的说明——速度不可能是 0。）
+	if speed <= 0.0:
+		speed = Config.num("waiter_speed")
 	stuck_timeout = Config.num("stuck_timeout")
 	collision_layer = 1 << 1   # waiter
 	collision_mask = 1 << 0    # world
 
+	_ensure_body_shape()
+	_setup_char_sprite()
+
+
+## 保证身上有且只有一个「半径 RADIUS 的圆形碰撞体」。
+##
+## 【为什么先找再建】你在场景里给 Waiter 摆好 CollisionShape2D 之后，
+## 原来那种「无条件 add_child 一个圆」会**再叠一个**：同一个物理体挂两个
+## 圆形碰撞体，尺寸还不一定一样 —— 表现是「贴着桌子时被推开得莫名其妙」
+## 或者「明明看着没碰到却过不去」，而且**不报错**。
+## 现在：场景里摆了就听你的（一个都不加），没摆才自动补一个。
+func _ensure_body_shape() -> void:
+	for c in get_children():
+		if c is CollisionShape2D:
+			return
 	var shape := CollisionShape2D.new()
 	var circle := CircleShape2D.new()
 	circle.radius = RADIUS
 	shape.shape = circle
 	add_child(shape)
+
+
+# ── 4 方向角色动画 ──────────────────────────────────────────────────
+##
+## 【为什么用 AnimatedSprite2D 而不是给这个节点换 Sprite2D】
+## 本节点是 CharacterBody2D，`_draw()` 里画的**影子**要留着自己画
+## （贴图里没有影子，也不该由贴图管）。角色贴图挂成子节点 AnimatedSprite2D，
+## 影子仍然画在身体中心 —— 于是「换美术」和「影子」互不干扰。
+##
+## 【动画名约定（8 个）】由你在编辑器里的 SpriteFrames 里建：
+##   idle_front / walk_front   正面（朝下，面向镜头）
+##   idle_back  / walk_back    背面（朝上，背对镜头）
+##   idle_left  / walk_left    朝左
+##   idle_right / walk_right   朝右
+##
+## 【为什么是 front/back 而不是 down/up】屏幕上的「上/下」和角色自己的
+## 「前/后」是两套语义：走路朝上时人是**背对**镜头，叫 `back` 不会有人理解错；
+## 叫 `up` 就容易和「往上抬头」混起来。已与用户确认改成 front/back。
+##
+## 【左右是两套独立贴图，**不用 flip_h**】已与用户确认：左右各画一套。
+## 于是这里一行镜像代码都没有 —— 少一个开关，也少一类
+## 「镜像之后肩上图标跑到反侧」的坑。
+##
+## 【缺动画时怎么办】不能写死「必须有 8 个」：美术是一张一张补的，
+## 少一个就崩（或静默不动）都不行。所以这里逐级退化：
+##   ① 精确名（walk_left）→ ② 相反方向同名动画 → ③ 已确认存在的任意动画
+##   → ④ 什么都没有：停在第一帧、不报错。
+## 这样你**先摆一套正面的帧**就能立刻看到效果，其余方向慢慢补。
+
+## 角色贴图节点（你在编辑器里挂在 Waiter 下面的 AnimatedSprite2D）
+var _char: AnimatedSprite2D = null
+
+## 当前朝向：front / back / left / right
+##
+## 【为什么用字符串而不是枚举】动画名就是 `walk_left` 这种拼出来的，
+## 用枚举还要写一张「枚举 → 后缀」的映射表，多一处能拼错的地方。
+##
+## 【常量值和动画名后缀**故意保持一致**】`DIR_FRONT` 的值就是 `"front"`，
+## 于是 `"walk_" + _facing` 直接就是动画名。要是这里写 `"down"`、
+## 动画名却叫 `front`，就得再维护一张映射表 —— 那正是最容易拼错的地方。
+const DIR_FRONT := "front"
+const DIR_BACK := "back"
+const DIR_LEFT := "left"
+const DIR_RIGHT := "right"
+
+var _facing: String = DIR_FRONT
+var _anim_state: String = ""
+## 这一帧身体是不是真的在移动（由 _walk 每帧更新）
+var _anim_moving: bool = false
+## 「一个可用动画都没有」的告警只报前几次，避免刷屏
+var _frame_warn_count: int = 0
+const FRAME_WARN_MAX := 3
+
+
+## 找到（并接好）角色贴图节点；没有就整个动画系统静默停用，退回画圆。
+func _setup_char_sprite() -> void:
+	for c in get_children():
+		if c is AnimatedSprite2D:
+			_char = c as AnimatedSprite2D
+			break
+	if _char == null:
+		return
+	if _char.sprite_frames == null:
+		# 有节点没帧：当作没贴图，继续画圆（免得出现一个空白小人）
+		_char = null
+		return
+
+	# 【z_index 必须在代码里再兜一层】同一节点的 `_draw()` 画在**所有**子节点
+	# **下面**，而影子就在 `_draw()` 里 —— 所以贴图得排到影子之后、
+	# 又要排在拿菜的图标之前。取 -1：在影子（更负的层）之上、图标之下。
+	# 你在编辑器里忘了设也不会挡住肩上的餐品图标。
+	_char.z_index = -1
+	# 【信号名是 sprite_frames_changed】（AnimatedSprite2D 上的那个）。
+	# 写成 animation_frames_changed 会当场抛
+	# `Invalid access to property or key ... on a base object of type AnimatedSprite2D`
+	# 并且**让 _ready() 从这里中断** —— 后面的朝向、flip_h、默认动画全都不会接上。
+	_char.sprite_frames_changed.connect(_on_frames_changed)
+	_anim_state = ""
+	_apply_facing_visual()
+	_update_animation()
+	# 【把实际动画名列一遍】排版对不上时（名字拼错、少个下划线、大小写不同）
+	# 这里一行就能看出来，不用去翻 SpriteFrames 面板。
+	print("[服务员] SpriteFrames 里的动画：%s"
+		% ", ".join(_char.sprite_frames.get_animation_names()))
+	queue_redraw()
+
+
+## 你在编辑器里改了 SpriteFrames（加动画 / 改帧）时重挑一次
+func _on_frames_changed() -> void:
+	_anim_state = ""
+	_apply_facing_visual()
+	_update_animation()
+
+
+## 没有角色贴图时画代码圆形
+func has_char_sprite() -> bool:
+	return _char != null
+
+
+## 脚底那个代码画的落地影子要不要画（**检查器里可调**）。
+##
+## 【默认 false：有角色贴图就不画】
+## 影子是按 `RADIUS = 16` 算的圆（约 30px 宽），而角色贴图只有 32×32、
+## 人形比画布窄 —— 于是影子会**从贴图的透明边里露出来**，看着就是一个
+## 多余的深色圆（用户报的就是这个）。所以有贴图时默认不画。
+##
+## 【为什么不是直接删掉】没贴图的兜底模式（纯灰圆服务员）仍然需要影子，
+## 否则小人像浮在空中。而且你这份美术要是**本身就带影子**（很多
+## 32×32 角色素材帧里就画了），那更不该叠第二个。
+##
+## 【什么时候想打开】贴图里没有影子、又觉得小人飘着 —— 勾上它，
+## 然后按需调 `shadow_radius` / `shadow_offset` 让它贴合你的美术。
+@export var draw_shadow: bool = false
+
+## 影子的圆心（相对身体中心）与半径。默认值 = 原来那个「按 RADIUS 算」的圆。
+const SHADOW_OFFSET := Vector2(0.0, RADIUS * 0.55)
+const SHADOW_RADIUS := RADIUS * 0.95
+
+
+## 按「在不在走 + 朝哪边」选动画。
+## 停下时**保持最后朝向**（播 idle_<朝向>）—— 已与用户确认。
+func _update_animation() -> void:
+	if _char == null:
+		return
+	var want := "%s_%s" % ["walk" if _anim_moving else "idle", _facing]
+	if want == _anim_state:
+		return
+	_anim_state = want
+	_apply_facing_visual()
+	var picked := _resolve_animation(want)
+	if picked == "":
+		# 【什么都不播，而不是硬塞一个不存在的名字】
+		# 给 `animation` 设一个 SpriteFrames 里没有的名字，Godot 会按「资源加载
+		# 失败」处理并报错（实测还会连带影响 frame / sprite_frames 的取值）。
+		# 宁可让小人静止一帧，也不去设一个不存在的名字。
+		if _frame_warn_count < FRAME_WARN_MAX:
+			_frame_warn_count += 1
+			push_warning("[服务员] SpriteFrames 里没有可用动画（想播 \"%s\"）—— 小人会静止不动。" % want)
+		return
+	_char.animation = picked
+	_char.play()
+
+
+## 左右镜像：4 套贴图只画了 right 时，往左走是最右那套的镜像。
+##
+## 【为什么不镜像其他方向】front / back 是正面背面，左右镜像没有意义
+## （镜像一个正面小人，贴图不会变成侧面）。所以只在 left/right 之间翻。
+func _apply_facing_visual() -> void:
+	if _char == null:
+		return
+	_char.flip_h = _facing == DIR_LEFT
+
+
+## 从「想要的动画名」逐级退化成「真实存在的名字」；都没有则返回 ""。
+##
+## 【降级顺序：先借镜像方向，再借相反状态】
+## 这个顺序是刻意的：**朝向比"在不在走"重要**。
+##   往左走却没有 walk_left → 借 walk_right + flip_h ✓ 看着完全对
+##   要是先借 idle_left，人会一边平移一边站定不动 ✗
+## 所以链条是：精确名 → 镜像名(left↔right) → 当前朝向的相反状态 → 任意动画。
+func _resolve_animation(want: String) -> String:
+	var frames := _char.sprite_frames
+	if frames.has_animation(want):
+		return want
+
+	var state := "walk" if _anim_moving else "idle"
+	var other := "idle" if _anim_moving else "walk"
+	var mirror := _mirror_dir(_facing)
+
+	# ① 同状态、镜像方向（left 缺帧时借 right，反之亦然）
+	var by_mirror := "%s_%s" % [state, mirror]
+	if mirror != _facing and frames.has_animation(by_mirror):
+		return by_mirror
+	# ② 同朝向、相反状态（还没有 walk 帧时，先拿 idle 顶一下，至少不是静止）
+	var by_other := "%s_%s" % [other, _facing]
+	if frames.has_animation(by_other):
+		return by_other
+	# ③ 镜像方向 + 相反状态
+	var by_both := "%s_%s" % [other, mirror]
+	if mirror != _facing and frames.has_animation(by_both):
+		return by_both
+	# ④ 最后才随便挑一个（宁可朝向不对，也不要整个人僵住）
+	var names := frames.get_animation_names()
+	return String(names[0]) if names.size() > 0 else ""
+
+
+## 左右互为镜像方向；front/back 没有镜像，原样返回。
+func _mirror_dir(d: String) -> String:
+	if d == DIR_LEFT:
+		return DIR_RIGHT
+	if d == DIR_RIGHT:
+		return DIR_LEFT
+	return d
+
+
+## 按本帧的移动方向刷新朝向。
+##
+## 【为什么横竖分开判】斜着走（比如 (1, 1)）时两个分量一样大，
+## 「谁大听谁的」会变成随机抖；这里定死**横向优先**：
+## 斜着走看起来就是朝侧面走，符合像素游戏的观感。
+func _update_facing(dir: Vector2) -> void:
+	if dir.length_squared() < 0.0001:
+		return
+	var f := _facing
+	if absf(dir.x) >= absf(dir.y):
+		f = DIR_RIGHT if dir.x > 0.0 else DIR_LEFT
+	else:
+		f = DIR_FRONT if dir.y > 0.0 else DIR_BACK
+	if f == _facing:
+		return
+	_facing = f
+	# 朝向一变，上下台阶就要重画；拿菜图标也可能换肩
+	queue_redraw()
 
 
 # ── 指令接口 ───────────────────────────────────────────────────────
@@ -360,11 +603,13 @@ func cancel_command(reason: String = "") -> void:
 # ── 每帧 ───────────────────────────────────────────────────────────
 
 func _physics_process(delta: float) -> void:
+	_anim_moving = false
 	if _active:
 		_walk(delta)
 	elif cleaning_table != null:
 		_advance_cleaning(delta)
 
+	_update_animation()
 	queue_redraw()
 
 
@@ -399,6 +644,12 @@ func _walk(delta: float) -> void:
 		want_dir = to_step / dist
 
 	velocity = _slide_steer(want_dir) * speed
+	# 【动画朝向用的是 velocity，不是 to_step】
+	# 沿障碍面滑行（_slide_steer）会让实际走向和「朝拐点方向」差最多 18°，
+	# 而角色看着走的是**实际**方向 —— 拿实际速度判朝向才不会出现
+	# 「贴墙时人往右走、贴图却朝上」。
+	_update_facing(velocity)
+	_anim_moving = velocity.length_squared() > 1.0
 	move_and_slide()
 	_update_slide_dir(delta)
 	if _arrived_now():
@@ -961,11 +1212,19 @@ const MARKER_STEP := 13.0
 
 
 func _draw() -> void:
-	# 影子
-	draw_circle(Vector2(0, RADIUS * 0.55), RADIUS * 0.95, Color(0, 0, 0, 0.22))
-	# 身体：一个圆（美术替换时从这里开始改）
-	draw_circle(Vector2.ZERO, RADIUS, Constants.COLOR_WAITER)
-	draw_arc(Vector2.ZERO, RADIUS, 0, TAU, 48, Color("2b3038"), 2.0)
+	# 影子：**有角色贴图时默认不画**（见 draw_shadow 的说明）。
+	# 它是按 RADIUS 算的圆（约 30px 宽），而 32×32 的角色贴图人形比画布窄，
+	# 于是影子会从贴图的透明边里露出来 —— 看着就是个多余的深色圆。
+	if _char == null or draw_shadow:
+		# 影子画在身体中心，所以它不会被 AnimatedSprite2D（z_index = -1）盖住
+		draw_circle(SHADOW_OFFSET, SHADOW_RADIUS, Color(0, 0, 0, 0.22))
+
+	# 身体占位圆：**只在还没有角色贴图时画**。
+	# 【为什么不画】挂了 AnimatedSprite2D 之后，这个灰圆会压在角色贴图上
+	# （影子可以压，因为它是半透明的落地阴影；一个实心圆就是画错了）。
+	if _char == null:
+		draw_circle(Vector2.ZERO, RADIUS, Constants.COLOR_WAITER)
+		draw_arc(Vector2.ZERO, RADIUS, 0, TAU, 48, Color("2b3038"), 2.0)
 
 	if not carried.is_empty():
 		_draw_carried_markers()
@@ -985,15 +1244,24 @@ func _draw() -> void:
 ##
 ## 【多份怎么画】手上最多 2 份：**左肩一个、右肩一个**（已与用户确认对称摆法）。
 ## 第 1 份在右肩、第 2 份在左肩，以身体为轴左右对称、等高。
+##
+## 【朝向会决定哪边是"画的右边"】贴图分 4 套之后，「右肩」只在面朝
+## front/right 时才在画面右侧；面朝 left/back 时身体左右已经调过来了。
+## 所以这里按 `_facing` 决定镜像，让两个方块**始终贴在身体实际的左右两侧上方**。
 func _draw_carried_markers() -> void:
+	# 注意：这里的镜像条件要**包含 back**（背对镜头时角色的右手在画面左边），
+	# 而 `_apply_facing_visual()` 里的 flip_h 只翻 left/right —— 两者的条件
+	# **故意不同**，别顺手合并成一个变量。
+	var mirror := _facing == DIR_LEFT or _facing == DIR_BACK
+	var first := Vector2(-MARKER_OFFSET.x, MARKER_OFFSET.y) if mirror else MARKER_OFFSET
 	if carried.size() >= 1:
-		_draw_one_marker(MARKER_OFFSET, carried[0])
+		_draw_one_marker(first, carried[0])
 	if carried.size() >= 2:
-		# 左肩：把右肩的偏移沿竖直中轴镜像
-		_draw_one_marker(Vector2(-MARKER_OFFSET.x, MARKER_OFFSET.y), carried[1])
+		# 第 2 份：把第 1 份的偏移沿竖直中轴镜像
+		_draw_one_marker(Vector2(-first.x, first.y), carried[1])
 	# 万一以后容量超过 2，多出来的继续往右上排（不至于不画）
 	for i in range(2, carried.size()):
-		_draw_one_marker(MARKER_OFFSET + Vector2(MARKER_STEP * float(i - 1), 0.0), carried[i])
+		_draw_one_marker(first + Vector2(MARKER_STEP * float(i - 1), 0.0), carried[i])
 
 
 func _draw_one_marker(centre: Vector2, item_id: String) -> void:

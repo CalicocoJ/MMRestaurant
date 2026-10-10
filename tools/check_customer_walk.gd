@@ -42,7 +42,7 @@ func _ready() -> void:
 			var c: Node = spawner.call("spawn_at_seat", t, seat)
 			var from: Vector2 = Door.spawn_point()
 			# 【注意】必须在 add_child 之后设位置：客人的 _ready 会重置位置
-			# 并按当时的位置算路径（见 customer.gd 里的时机说明）。
+			# 并按当时的位置算路径（见 guest.gd 里的时机说明）。
 			# spawn_at_seat 内部已经按门口位置 setup 好了，这里不用再动。
 			# 位置以 setup 时传入的 from 为准。
 

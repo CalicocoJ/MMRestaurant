@@ -1,5 +1,20 @@
-extends Node2D
-## 客人。状态机严格对应文档第四节。
+extends Area2D
+class_name Guest
+## 客人（进店的顾客）。状态机严格对应文档第四节。
+##
+## 【为什么是 Area2D 而不是 CharacterBody2D】
+## 客人**必须能站进椅子里面坐下** —— 座位中心就在椅子上（`seat_sit_point`）。
+## 一旦客人是 CharacterBody2D 并且和家具层碰撞，走到椅子边就会被推开：
+##   到不了座位 → `reached_seat` 不发 → 客人白站、订单永不出现，**且不报错**。
+## 这正是当初「客人故意没有碰撞体」的原因（见 `_blocked()` 的说明）。
+##
+## Area2D 给到了「有物理体、有 CollisionShape2D、能被别人检测到」这些基础，
+## 但**什么都不挡、也不被挡**。以后真要做「被推开 / 撞门」，把它换成
+## CharacterBody2D + 坐下时关掉 collision_layer 即可 —— 场景结构不用动。
+##
+## 【谁来造它】`CustomerManager` → `Level.make_customer()` →
+## 实例化 `scenes/Guest.tscn`（模板里有 AnimatedSprite2D），
+## 然后把随机抽到的 `GuestSkin` 挂上去。本文件只管逻辑，不管自己从哪来。
 ##
 ## 状态            进入条件                耐心    头顶显示          超时行为
 ## WALKING_IN      生成                     —     无                 —
@@ -78,6 +93,205 @@ func setup(p_table: Node, p_seat: Seat, from: Vector2, p_sit: Vector2) -> void:
 func _ready() -> void:
 	# 进树了，现在可以安全地做射线检测
 	_compute_walk_in_path(_pending_path_from, _pending_path_to)
+	_setup_char_sprite()
+
+
+# ── 4 方向角色动画 ──────────────────────────────────────────────────
+##
+## 【和 waiter.gd 是同一套约定】皮肤场景的结构也一样：
+##   Customer (Node2D) → AnimatedSprite2D
+## 8 个动画名：idle_front / walk_front、idle_back / walk_back、
+##             idle_left / walk_left、idle_right / walk_right
+## 左右缺帧会自动借对侧 + flip_h（美术只画了 right 时够用）。
+##
+## 【为什么不和 waiter.gd 共用一个驱动文件】
+## 两边共约 150 行，功能一致但**宿主不同**：服务员是 CharacterBody2D（靠
+## `velocity` 判朝向），客人是 Node2D（靠「朝下一个拐点走」的方向判朝向），
+## 而且客人有用餐/生气要染色。硬抽一个公共模块需要再引入一层「宿主适配」，
+## 反而更容易在改动时把两边搞出差异。**代价是这两份要一起维护**：
+## 以后改动画约定（加方向、改命名），两个文件都要改。
+## 真要合并时，把这 6 个函数整体搬进一个 `char_anim.gd` 即可，
+## 它们只依赖 `_char` 和 `_facing` 两个字段。
+
+var _char: AnimatedSprite2D = null
+
+const DIR_FRONT := "front"
+const DIR_BACK := "back"
+const DIR_LEFT := "left"
+const DIR_RIGHT := "right"
+
+var _facing: String = DIR_FRONT
+var _anim_state: String = ""
+var _frame_warn_count: int = 0
+const FRAME_WARN_MAX := 3
+
+## 这套皮肤的名字（来自 `GuestSkin.display_name`），**只用于调试输出**。
+## 客人头顶故意不显示任何文字（见 _draw 里的说明），所以别指望界面上能看到它。
+var display_name: String = ""
+
+
+## 挂上一套皮肤（由 `Level.make_customer()` 在实例化模板之后调用）。
+##
+## 【为什么做得这么"宽"】三种情况都得能跑：
+##   ① 模板 `Guest.tscn` 里有 AnimatedSprite2D（正常情况）→ 换掉它的 frames；
+##   ② 模板丢了、走了代码兜底（裸 Area2D，没有子节点）→ **就地补一个**贴图节点，
+##      这样即使场景文件出问题，皮肤也照样生效；
+##   ③ skin 为空 / 没配帧 → 什么都不做，继续画灰圆（旧行为）。
+## 调用时机上，它总是在 `add_child()` **之前**（客人还没进树），
+## 所以这里必须用 `add_child` 而不是等 `_ready` —— 那个已经跑过了。
+func apply_skin(skin: GuestSkin) -> void:
+	if skin == null or skin.sprite_frames == null:
+		return
+	display_name = skin.display_name
+	if _char == null:
+		_char = AnimatedSprite2D.new()
+		_char.name = "AnimatedSprite2D"
+		# 贴图挂在节点原点、居中 —— 客人的原点就是「脚底中心」，
+		# 于是贴图和耐心环 / ! 号的相对位置永远一致。
+		_char.position = Vector2.ZERO
+		_char.centered = true
+		add_child(_char)
+	_char.sprite_frames = skin.sprite_frames
+	# 【换完 frames 必须重连 / 重挑动画】sprite_frames_changed 信号是在
+	# `_ready()` 里接的，而那时 _char 可能还是 null（皮肤此刻才挂上来）——
+	# 不在这里补一次，客人就会一直保持默认的 "default" 动画（不播、或播错）。
+	if not _char.sprite_frames_changed.is_connected(_on_frames_changed):
+		_char.sprite_frames_changed.connect(_on_frames_changed)
+	_anim_state = ""
+	_apply_facing_visual()
+	_update_animation()
+
+
+## 找到（并接好）角色贴图节点；没有就整个动画系统静默停用，退回画圆。
+func _setup_char_sprite() -> void:
+	for c in get_children():
+		if c is AnimatedSprite2D:
+			_char = c as AnimatedSprite2D
+			break
+	if _char == null:
+		return
+	if _char.sprite_frames == null:
+		# 有节点没帧：当作没贴图，继续画圆（免得出现一个空白客人）
+		_char = null
+		return
+	# 【z_index 兜一层】耐心环 / ! 号 / 「用餐中」气泡都画在本节点的 `_draw()` 里，
+	# 而 `_draw()` 排在**所有子节点之前** —— 贴图不压到它们就行，默认 0 即可；
+	# 这里只做防呆：如果你把它设成了正数，会把耐心环盖住。
+	if _char.z_index > 0:
+		_char.z_index = 0
+	_char.sprite_frames_changed.connect(_on_frames_changed)
+	_anim_state = ""
+	_apply_facing_visual()
+	_update_animation()
+	print("[客人] %s SpriteFrames 里的动画：%s"
+		% [display_name, ", ".join(_char.sprite_frames.get_animation_names())])
+
+
+## 你在编辑器里改了 SpriteFrames（加动画 / 改帧）时重挑一次
+func _on_frames_changed() -> void:
+	_anim_state = ""
+	_apply_facing_visual()
+	_update_animation()
+
+
+## 客人身上有没有角色贴图（没有就是代码画的灰圆）
+func has_char_sprite() -> bool:
+	return _char != null
+
+
+## 按「在不在走 + 朝哪边」选动画；停下保持最后朝向。
+func _update_animation() -> void:
+	if _char == null:
+		return
+	# 【坐着的状态一律播 idle】客人「走向座位」时才算 walking；
+	# 等点单 / 等上菜 / 用餐 都是坐着不动，播 idle 才不会在原地踏步。
+	var walking := state == Constants.State.WALKING_IN \
+		or state == Constants.State.LEAVING \
+		or state == Constants.State.ANGRY_LEAVING
+	var want := "%s_%s" % ["walk" if walking else "idle", _facing]
+	_apply_state_tint()
+	if want == _anim_state:
+		return
+	_anim_state = want
+	_apply_facing_visual()
+	var picked := _resolve_animation(want)
+	if picked == "":
+		if _frame_warn_count < FRAME_WARN_MAX:
+			_frame_warn_count += 1
+			push_warning("[客人] SpriteFrames 里没有可用动画（想播 \"%s\"）—— 客人会静止不动。" % want)
+		return
+	_char.animation = picked
+	_char.play()
+
+
+## 左右镜像：美术只画了 right 时，往左走是那套的镜像
+func _apply_facing_visual() -> void:
+	if _char == null:
+		return
+	_char.flip_h = _facing == DIR_LEFT
+
+
+## 用餐 / 生气用**染色**表达，而不是换动画帧。
+##
+## 【为什么不换帧】换帧要给每套皮肤额外画 angry/eating 两套方向帧
+## （4 方向 × 2 状态 × 皮肤数），美术成本翻倍；而这两个状态只需要
+## 「一眼看出不一样」。染色对任何皮肤都生效，新皮肤也不用额外画。
+func _apply_state_tint() -> void:
+	if _char == null:
+		return
+	if state == Constants.State.EATING:
+		_char.modulate = Constants.COLOR_CUSTOMER_EATING
+	elif state == Constants.State.ANGRY_LEAVING:
+		_char.modulate = Constants.COLOR_CUSTOMER_ANGRY
+	else:
+		_char.modulate = Color.WHITE
+
+
+## 逐级退化成一个真实存在的动画名；都没有则返回 ""
+func _resolve_animation(want: String) -> String:
+	var frames := _char.sprite_frames
+	if frames.has_animation(want):
+		return want
+	var walking := state == Constants.State.WALKING_IN \
+		or state == Constants.State.LEAVING \
+		or state == Constants.State.ANGRY_LEAVING
+	var state_name := "walk" if walking else "idle"
+	var other := "idle" if walking else "walk"
+	var mirror := _mirror_dir(_facing)
+	var by_mirror := "%s_%s" % [state_name, mirror]
+	if mirror != _facing and frames.has_animation(by_mirror):
+		return by_mirror
+	var by_other := "%s_%s" % [other, _facing]
+	if frames.has_animation(by_other):
+		return by_other
+	var by_both := "%s_%s" % [other, mirror]
+	if mirror != _facing and frames.has_animation(by_both):
+		return by_both
+	var names := frames.get_animation_names()
+	return String(names[0]) if names.size() > 0 else ""
+
+
+func _mirror_dir(d: String) -> String:
+	if d == DIR_LEFT:
+		return DIR_RIGHT
+	if d == DIR_RIGHT:
+		return DIR_LEFT
+	return d
+
+
+## 按移动方向刷新朝向（斜着走横向优先，和服务员同一规则）。
+func _update_facing(dir: Vector2) -> void:
+	if dir.length_squared() < 0.0001:
+		return
+	var f := _facing
+	if absf(dir.x) >= absf(dir.y):
+		f = DIR_RIGHT if dir.x > 0.0 else DIR_LEFT
+	else:
+		f = DIR_FRONT if dir.y > 0.0 else DIR_BACK
+	if f == _facing:
+		return
+	_facing = f
+	queue_redraw()
 
 
 ## 进树之后再算路径（见 setup 里的说明）
@@ -309,11 +523,14 @@ func _process(delta: float) -> void:
 					if table != null and is_instance_valid(table) and seat != null:
 						table.call("member_vacated", seat)
 					gone.emit(self)
+	_update_animation()
 	queue_redraw()
 
 
 func _step_toward(point: Vector2, delta: float) -> bool:
 	var step := speed * delta
+	# 朝向按**实际走的方向**判（不是按最终目标点），这样拐弯处朝向也跟着变
+	_update_facing(point - global_position)
 	if global_position.distance_to(point) <= step:
 		global_position = point
 		return true
@@ -355,6 +572,9 @@ func _follow_waypoints(delta: float) -> bool:
 
 	var wp: Vector2 = _in_waypoints[0]
 	var step := speed * delta
+	# 朝向按「朝当前拐点走」的方向判 —— 客人走的是直角折线，
+	# 用最终座位点判的话，整段路都会朝着座位那个斜方向，看着是错的。
+	_update_facing(wp - global_position)
 	if global_position.distance_to(wp) <= step:
 		global_position = wp
 		_in_waypoints.pop_front()
@@ -698,17 +918,36 @@ func remaining_items() -> int:
 	return seat.remaining() if seat != null else 0
 
 
+## 脚底那个代码画的落地影子要不要画（**检查器里可调**）。
+##
+## 【默认 false：有角色贴图就不画】理由同 waiter.gd：影子是按 `RADIUS = 15`
+## 算的圆，而 32×32 的角色贴图人形比画布窄 —— 它会**从贴图的透明边里露出来**，
+## 看着是个多余的深色圆（服务员那边已经踩过一次）。
+##
+## 【两种状态仍要看得出来】用餐（绿）/ 生气（红）现在走
+## `_apply_state_tint()` 的 modulate 染色，和影子无关。
+@export var draw_shadow: bool = false
+
+const SHADOW_OFFSET := Vector2(0.0, RADIUS * 0.6)
+const SHADOW_RADIUS := RADIUS * 0.9
+
+
 func _draw() -> void:
-	# 影子
-	draw_circle(Vector2(0, RADIUS * 0.6), RADIUS * 0.9, Color(0, 0, 0, 0.22))
+	# 影子：有角色贴图时默认不画（见 draw_shadow 的说明）
+	if _char == null or draw_shadow:
+		draw_circle(SHADOW_OFFSET, SHADOW_RADIUS, Color(0, 0, 0, 0.22))
 
 	var body := Constants.COLOR_CUSTOMER
 	if state == Constants.State.EATING:
 		body = Constants.COLOR_CUSTOMER_EATING
 	elif state == Constants.State.ANGRY_LEAVING:
 		body = Constants.COLOR_CUSTOMER_ANGRY
-	draw_circle(Vector2.ZERO, RADIUS, body)
-	draw_arc(Vector2.ZERO, RADIUS, 0, TAU, 40, Color("2b3038"), 2.0)
+	# 身体占位圆：只在还没有角色贴图时画。
+	# 【为什么不画】挂了 AnimatedSprite2D 之后，这个实心圆会压在角色贴图上。
+	# 用餐 / 生气的颜色改由 `_apply_state_tint()` 染在贴图上。
+	if _char == null:
+		draw_circle(Vector2.ZERO, RADIUS, body)
+		draw_arc(Vector2.ZERO, RADIUS, 0, TAU, 40, Color("2b3038"), 2.0)
 
 	# 头顶：**不显示菜名**。
 	#
